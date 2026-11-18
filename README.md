@@ -32,6 +32,7 @@ Contextual Drill-Through Inspector:
 
 Finsight leverages a modular full-stack architecture separating server-side rendering/data fetching from interactive client components:
 
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │ Client Browser │
 │ (Next.js Client Components: Charts, Filters, Settings) │
@@ -46,3 +47,4 @@ Finsight leverages a modular full-stack architecture separating server-side rend
 │ Supabase Backend │
 │ (PostgreSQL DB, Auth, and Row-Level Security) │
 └─────────────────────────────────────────────────────────────┘
+```
