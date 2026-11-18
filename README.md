@@ -34,17 +34,17 @@ Finsight leverages a modular full-stack architecture separating server-side rend
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ Client Browser │
-│ (Next.js Client Components: Charts, Filters, Settings) │
+│                        Client Browser                       │
+│    (Next.js Client Components: Charts, Filters, Settings)   │
 └──────────────────────────────┬──────────────────────────────┘
-│ HTTPS / Server Actions
+                               │ HTTPS / Server Actions
 ┌──────────────────────────────v──────────────────────────────┐
-│ Next.js App Router │
-│ (Server-Side Rendering, Route Handlers & Server Actions) │
+│                       Next.js App Router                    │
+│    (Server-Side Rendering, Route Handlers & Server Actions) │
 └──────────────────────────────┬──────────────────────────────┘
-│ Supabase Client SDK
+                               │ Supabase Client SDK
 ┌──────────────────────────────v──────────────────────────────┐
-│ Supabase Backend │
-│ (PostgreSQL DB, Auth, and Row-Level Security) │
+│                       Supabase Backend                      │
+│          (PostgreSQL DB, Auth, and Row-Level Security)      │
 └─────────────────────────────────────────────────────────────┘
 ```
