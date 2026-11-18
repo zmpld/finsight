@@ -1,37 +1,37 @@
+// app/dashboard/TransactionsSection.tsx
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { Pencil, Trash2, X, Check, Search } from "lucide-react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { deleteTransaction, updateTransaction } from "./actions";
+import {
+  Pencil,
+  Trash2,
+  Check,
+  ArrowUpDown,
+  Search,
+  ChevronDown,
+} from "lucide-react";
 
-type Category = {
+interface Category {
   id: string;
   name: string;
   type: string;
-};
+  color?: string;
+}
 
-type CategoryRef = { name?: string; color?: string };
-
-type Transaction = {
+interface Transaction {
   id: string;
-  type: "income" | "expense" | string;
+  type: string;
   amount: number | string;
   description: string;
   transaction_date: string;
-  category_id: string | null;
-  categories?: CategoryRef | CategoryRef[] | null;
-};
-
-function categoryName(
-  categories: Transaction["categories"],
-): string | undefined {
-  if (!categories) return undefined;
-  if (Array.isArray(categories)) return categories[0]?.name;
-  return categories.name;
+  created_at?: string;
+  category_id?: string;
+  categories?:
+    | { name?: string; color?: string }
+    | { name?: string; color?: string }[];
 }
-
-const fieldClass =
-  "w-full min-w-0 rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:border-blue-500 focus:outline-none";
 
 export default function TransactionsSection({
   transactions,
@@ -40,269 +40,498 @@ export default function TransactionsSection({
   transactions: Transaction[];
   categories: Category[];
 }) {
-  const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">(
-    "all",
-  );
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return transactions.filter((t) => {
-      if (typeFilter !== "all" && t.type !== typeFilter) return false;
-      if (!q) return true;
-      const cat = categoryName(t.categories) || "";
-      return (
-        t.description.toLowerCase().includes(q) ||
-        cat.toLowerCase().includes(q)
-      );
-    });
-  }, [transactions, query, typeFilter]);
+  const [filterType, setFilterType] = useState<"all" | "income" | "expense">(
+    "all",
+  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<
+    "newest" | "oldest" | "largest" | "smallest" | "date_asc" | "date_desc"
+  >("newest");
+  const [isSortOpen, setIsSortOpen] = useState(false);
 
-  const handleDelete = (id: string, description: string) => {
-    if (!confirm(`Delete “${description}”? This cannot be undone.`)) return;
-    setError(null);
-    startTransition(async () => {
-      try {
-        const formData = new FormData();
-        formData.set("id", id);
-        await deleteTransaction(formData);
-        if (editingId === id) setEditingId(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Delete failed");
-      }
+  // Editing state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDesc, setEditDesc] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editType, setEditType] = useState<"income" | "expense">("expense");
+  const [editCatId, setEditCatId] = useState("");
+  const [editDate, setEditDate] = useState("");
+
+  const handleStartEdit = (t: Transaction) => {
+    setEditingId(t.id);
+    setEditDesc(t.description);
+    setEditAmount(String(t.amount));
+    setEditType(t.type as "income" | "expense");
+    setEditCatId(t.category_id || "");
+    setEditDate(t.transaction_date || "");
+  };
+
+  const handleSaveEdit = async (id: string) => {
+    const formData = new FormData();
+    formData.append("id", id);
+    formData.append("description", editDesc);
+    formData.append("amount", editAmount);
+    formData.append("type", editType);
+    formData.append("category_id", editCatId);
+    formData.append("transaction_date", editDate);
+
+    await updateTransaction(formData);
+    setEditingId(null);
+    startTransition(() => {
+      router.refresh();
     });
   };
 
-  const handleUpdate = (formData: FormData) => {
-    setError(null);
-    startTransition(async () => {
-      try {
-        await updateTransaction(formData);
-        setEditingId(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Update failed");
-      }
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this transaction?")) return;
+
+    const formData = new FormData();
+    formData.append("id", id);
+
+    await deleteTransaction(formData);
+    startTransition(() => {
+      router.refresh();
     });
+  };
+
+  // 1. Filter by Type (All / Income / Expense) & Search Query
+  const filtered = transactions.filter((t) => {
+    const matchesType = filterType === "all" || t.type === filterType;
+    const catRef = t.categories;
+    const catName = Array.isArray(catRef) ? catRef[0]?.name : catRef?.name;
+    const matchesSearch =
+      t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (catName && catName.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesType && matchesSearch;
+  });
+
+  // 2. Sort Logic handling proper signed amounts, creation order, and explicit transaction dates
+  const sortedTransactions = [...filtered].sort((a, b) => {
+    const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+
+    if (sortBy === "newest") {
+      return timeB - timeA;
+    }
+    if (sortBy === "oldest") {
+      return timeA - timeB;
+    }
+
+    if (sortBy === "date_asc" || sortBy === "date_desc") {
+      const dateValA = new Date(a.transaction_date || 0).getTime();
+      const dateValB = new Date(b.transaction_date || 0).getTime();
+      return sortBy === "date_asc" ? dateValA - dateValB : dateValB - dateValA;
+    }
+
+    // Properly calculate signed amount (Income = positive, Expense = negative)
+    const valA = a.type === "income" ? Number(a.amount) : -Number(a.amount);
+    const valB = b.type === "income" ? Number(b.amount) : -Number(b.amount);
+
+    if (sortBy === "largest") {
+      return valB - valA; // Highest positive down to lowest negative
+    }
+    if (sortBy === "smallest") {
+      return valA - valB; // Lowest/most negative up to highest positive
+    }
+    return 0;
+  });
+
+  const getCategoryName = (catRef: Transaction["categories"]) => {
+    if (!catRef) return "Unassigned";
+    if (Array.isArray(catRef)) return catRef[0]?.name || "Unassigned";
+    return catRef.name || "Unassigned";
+  };
+
+  const getSortLabel = () => {
+    switch (sortBy) {
+      case "newest":
+        return "Newest to Oldest";
+      case "oldest":
+        return "Oldest to Newest";
+      case "date_asc":
+        return "By date (ASC)";
+      case "date_desc":
+        return "By date (DESC)";
+      case "largest":
+        return "Largest to Smallest";
+      case "smallest":
+        return "Smallest to Largest";
+    }
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 p-4 sm:p-6 rounded-2xl overflow-hidden">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold">Recent Transactions</h2>
+    <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-6">
+      {/* Header & Sort Dropdown */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-white">
+            Recent Transactions
+          </h2>
           <p className="text-xs text-slate-400 mt-0.5">
             Search, edit, or delete entries without leaving the dashboard.
           </p>
         </div>
-        <span className="self-start sm:self-auto shrink-0 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800 text-xs text-slate-400">
-          {filtered.length} shown
-        </span>
-      </div>
 
-      <div className="flex flex-col gap-3 mb-4">
-        <div className="relative w-full min-w-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500 pointer-events-none" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search description or category…"
-            className={`${fieldClass} pl-9`}
-          />
-        </div>
-        <div className="grid grid-cols-3 rounded-lg border border-slate-800 overflow-hidden text-sm">
-          {(["all", "income", "expense"] as const).map((value) => (
+        {/* File Explorer Style Sort Dropdown & Shown Badge */}
+        <div className="flex items-center gap-3 relative">
+          {/* Sort Dropdown Button */}
+          <div className="relative">
             <button
-              key={value}
               type="button"
-              onClick={() => setTypeFilter(value)}
-              className={`px-3 py-2 capitalize transition ${
-                typeFilter === value
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-950 text-slate-400 hover:text-slate-200"
-              }`}
+              onClick={() => setIsSortOpen(!isSortOpen)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 text-xs text-slate-300 transition"
             >
-              {value}
+              <ArrowUpDown className="h-3.5 w-3.5 text-blue-400" />
+              <span>Sort</span>
+              <ChevronDown className="h-3 w-3 text-slate-400 ml-0.5" />
             </button>
-          ))}
+
+            {/* Dropdown Menu with Active Indicators */}
+            {isSortOpen && (
+              <div
+                className="absolute right-0 mt-2 w-52 rounded-xl bg-slate-950 border border-slate-800 shadow-xl py-1.5 z-30"
+                onMouseLeave={() => setIsSortOpen(false)}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortBy("newest");
+                    setIsSortOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "newest" ? "bg-blue-400" : "bg-transparent"}`}
+                    />
+                    <span>Newest to Oldest</span>
+                  </span>
+                  {sortBy === "newest" && (
+                    <Check className="h-3.5 w-3.5 text-blue-400" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortBy("oldest");
+                    setIsSortOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "oldest" ? "bg-blue-400" : "bg-transparent"}`}
+                    />
+                    <span>Oldest to Newest</span>
+                  </span>
+                  {sortBy === "oldest" && (
+                    <Check className="h-3.5 w-3.5 text-blue-400" />
+                  )}
+                </button>
+
+                <div className="border-t border-slate-800 my-1" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortBy("largest");
+                    setIsSortOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "largest" ? "bg-blue-400" : "bg-transparent"}`}
+                    />
+                    <span>Largest to Smallest</span>
+                  </span>
+                  {sortBy === "largest" && (
+                    <Check className="h-3.5 w-3.5 text-blue-400" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortBy("smallest");
+                    setIsSortOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "smallest" ? "bg-blue-400" : "bg-transparent"}`}
+                    />
+                    <span>Smallest to Largest</span>
+                  </span>
+                  {sortBy === "smallest" && (
+                    <Check className="h-3.5 w-3.5 text-blue-400" />
+                  )}
+                </button>
+
+                <div className="border-t border-slate-800 my-1" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortBy("date_asc");
+                    setIsSortOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "date_asc" ? "bg-blue-400" : "bg-transparent"}`}
+                    />
+                    <span>By date (ASC)</span>
+                  </span>
+                  {sortBy === "date_asc" && (
+                    <Check className="h-3.5 w-3.5 text-blue-400" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSortBy("date_desc");
+                    setIsSortOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "date_desc" ? "bg-blue-400" : "bg-transparent"}`}
+                    />
+                    <span>By date (DESC)</span>
+                  </span>
+                  {sortBy === "date_desc" && (
+                    <Check className="h-3.5 w-3.5 text-blue-400" />
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Shown Badge */}
+          <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-medium text-slate-400">
+            {sortedTransactions.length} shown
+          </div>
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">
-          {error}
-        </div>
-      )}
+      {/* Search Input */}
+      <div className="relative">
+        <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
+        <input
+          type="text"
+          placeholder="Search description or category..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full rounded-xl bg-slate-950 border border-slate-800 pl-10 pr-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500 transition"
+        />
+      </div>
 
-      <div className="space-y-2">
-        {filtered.length > 0 ? (
-          filtered.map((t) =>
-            editingId === t.id ? (
-              <form
-                key={t.id}
-                action={handleUpdate}
-                className="rounded-xl border border-blue-500/30 bg-slate-950/80 p-4 space-y-3"
-              >
-                <input type="hidden" name="id" value={t.id} />
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">
-                    Editing transaction
-                  </p>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <button
-                      type="submit"
-                      disabled={isPending}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-                      title="Save"
-                    >
-                      <Check className="h-4 w-4" />
-                      <span>Save</span>
-                    </button>
+      {/* Filter Tabs (All / Income / Expense) */}
+      <div className="grid grid-cols-3 gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+        <button
+          type="button"
+          onClick={() => setFilterType("all")}
+          className={`py-2 text-xs font-semibold rounded-lg transition ${
+            filterType === "all"
+              ? "bg-blue-600 text-white shadow"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterType("income")}
+          className={`py-2 text-xs font-semibold rounded-lg transition ${
+            filterType === "income"
+              ? "bg-blue-600 text-white shadow"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Income
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterType("expense")}
+          className={`py-2 text-xs font-semibold rounded-lg transition ${
+            filterType === "expense"
+              ? "bg-blue-600 text-white shadow"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Expense
+        </button>
+      </div>
+
+      {/* Transaction List */}
+      <div className="space-y-3">
+        {sortedTransactions.length === 0 ? (
+          <div className="text-center py-12 text-slate-500 text-sm border border-dashed border-slate-800 rounded-xl">
+            No transactions found matching your filters.
+          </div>
+        ) : (
+          sortedTransactions.map((t) => {
+            const isEditing = editingId === t.id;
+            const categoryName = getCategoryName(t.categories);
+            const isIncome = t.type === "income";
+
+            if (isEditing) {
+              return (
+                <div
+                  key={t.id}
+                  className="bg-slate-950 border border-blue-500/50 p-4 rounded-xl space-y-3 shadow-lg"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
+                        Description
+                      </label>
+                      <input
+                        type="text"
+                        value={editDesc}
+                        onChange={(e) => setEditDesc(e.target.value)}
+                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
+                        Amount (₱)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editAmount}
+                        onChange={(e) => setEditAmount(e.target.value)}
+                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
+                        Type
+                      </label>
+                      <select
+                        value={editType}
+                        onChange={(e) =>
+                          setEditType(e.target.value as "income" | "expense")
+                        }
+                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="expense">Expense</option>
+                        <option value="income">Income</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
+                        Category
+                      </label>
+                      <select
+                        value={editCatId}
+                        onChange={(e) => setEditCatId(e.target.value)}
+                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="">Unassigned</option>
+                        {categories
+                          .filter((c) => c.type === editType)
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
+                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500 [&::-webkit-calendar-picker-indicator]:invert"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
                     <button
                       type="button"
                       onClick={() => setEditingId(null)}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-800 px-3 text-sm font-medium text-slate-200 hover:bg-slate-700"
-                      title="Cancel"
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition"
                     >
-                      <X className="h-4 w-4" />
-                      <span>Cancel</span>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => handleSaveEdit(t.id)}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition disabled:opacity-50"
+                    >
+                      {isPending ? "Saving..." : "Save Changes"}
                     </button>
                   </div>
                 </div>
+              );
+            }
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="sm:col-span-2">
-                    <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">
-                      Description
-                    </label>
-                    <input
-                      name="description"
-                      defaultValue={t.description}
-                      required
-                      className={fieldClass}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">
-                      Type
-                    </label>
-                    <select
-                      name="type"
-                      defaultValue={t.type}
-                      className={fieldClass}
-                    >
-                      <option value="expense">Expense</option>
-                      <option value="income">Income</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">
-                      Amount (₱)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      name="amount"
-                      defaultValue={Number(t.amount)}
-                      required
-                      className={fieldClass}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">
-                      Category
-                    </label>
-                    <select
-                      name="category_id"
-                      defaultValue={t.category_id || ""}
-                      className={fieldClass}
-                    >
-                      <option value="">Unassigned</option>
-                      {categories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1">
-                      Date
-                    </label>
-                    <input
-                      type="date"
-                      name="transaction_date"
-                      defaultValue={t.transaction_date}
-                      required
-                      className={fieldClass}
-                    />
-                  </div>
-                </div>
-              </form>
-            ) : (
+            return (
               <div
                 key={t.id}
-                className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-3 sm:px-4 hover:border-slate-700 transition"
+                className="bg-slate-950 border border-slate-800/80 hover:border-slate-700 p-4 rounded-xl flex items-center justify-between transition"
               >
-                <div className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-medium text-slate-100 truncate">
-                          {t.description}
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-400 truncate">
-                          {categoryName(t.categories) || "Unassigned"}
-                          <span className="text-slate-600"> · </span>
-                          {t.transaction_date}
-                        </p>
-                      </div>
-                      <p
-                        className={`shrink-0 text-sm font-semibold tabular-nums ${
-                          t.type === "income"
-                            ? "text-emerald-400"
-                            : "text-slate-100"
-                        }`}
-                      >
-                        {t.type === "income" ? "+" : "-"}₱
-                        {Number(t.amount).toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
+                <div>
+                  <p className="text-sm font-semibold text-white">
+                    {t.description}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {categoryName} · {t.transaction_date}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <span
+                    className={`text-sm font-bold ${
+                      isIncome ? "text-emerald-400" : "text-slate-100"
+                    }`}
+                  >
+                    {isIncome
+                      ? `+₱${Number(t.amount).toFixed(2)}`
+                      : `-₱${Number(t.amount).toFixed(2)}`}
+                  </span>
+
+                  <div className="flex items-center gap-1 border-l border-slate-800 pl-3">
                     <button
                       type="button"
-                      onClick={() => setEditingId(t.id)}
-                      disabled={isPending}
-                      className="h-8 w-8 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-slate-800 transition disabled:opacity-50"
-                      title="Edit"
+                      onClick={() => handleStartEdit(t)}
+                      aria-label="Edit transaction"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
                     >
-                      <Pencil className="h-4 w-4 mx-auto" />
+                      <Pencil className="h-4 w-4" />
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDelete(t.id, t.description)}
-                      disabled={isPending}
-                      className="h-8 w-8 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-800 transition disabled:opacity-50"
-                      title="Delete"
+                      onClick={() => handleDelete(t.id)}
+                      aria-label="Delete transaction"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-800 transition"
                     >
-                      <Trash2 className="h-4 w-4 mx-auto" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
               </div>
-            ),
-          )
-        ) : (
-          <div className="rounded-xl border border-dashed border-slate-800 py-10 text-center text-sm text-slate-500">
-            {transactions.length === 0
-              ? "No transactions yet — add one or import a CSV."
-              : "No transactions match your filters."}
-          </div>
+            );
+          })
         )}
       </div>
     </div>

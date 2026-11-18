@@ -1,11 +1,9 @@
 // app/dashboard/page.tsx
 import { Suspense } from "react";
-import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import dynamic from "next/dynamic";
-import { logout } from "./actions";
 import { importTransactionsCSV } from "./csv-actions";
 import BudgetSection from "./BudgetSection";
 import AIInsightsSection from "./AIInsightsSection";
@@ -13,17 +11,19 @@ import TransactionsSection from "./TransactionsSection";
 import TimeframeFilter from "./TimeframeFilter";
 import AddTransactionSection from "./AddTransactionSection";
 import DashboardSidebar from "./DashboardSidebar";
+import SettingsSection from "./SettingsSection";
 import { formatMonthLabel } from "@/utils/date-format";
 import {
   Wallet,
   TrendingUp,
   TrendingDown,
   Upload,
-  LogOut,
   PiggyBank,
   CalendarDays,
-  Shield,
-  UserCheck,
+  BarChart3,
+  Activity,
+  CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 
 const ChartsSection = dynamic(() => import("./ChartsSection"), {
@@ -88,6 +88,14 @@ async function DashboardContent({
 
   if (!user) redirect("/login");
 
+  // Helper for Peso currency formatting with commas
+  const formatPeso = (val: number | string, decimals = 2) => {
+    return `₱${Number(val).toLocaleString("en-PH", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })}`;
+  };
+
   const today = new Date().toLocaleDateString("en-CA", {
     timeZone: "Asia/Manila",
   });
@@ -120,10 +128,10 @@ async function DashboardContent({
       supabase
         .from("transactions")
         .select(
-          "id, type, amount, description, transaction_date, category_id, categories(name, color)",
+          "id, type, amount, description, transaction_date, created_at, category_id, categories(name, color)",
         )
         .eq("user_id", user.id)
-        .order("transaction_date", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(1000),
       supabase
         .from("budgets")
@@ -193,6 +201,7 @@ async function DashboardContent({
     return categoriesRef.name || "Unassigned";
   };
 
+  // Top Spending Category
   const topCategory = (() => {
     const map: Record<string, number> = {};
     filteredTransactions
@@ -204,6 +213,73 @@ async function DashboardContent({
     const entries = Object.entries(map).sort((a, b) => b[1] - a[1]);
     return entries[0] || null;
   })();
+
+  // Income Sources Summary (for Period Income subtitle)
+  const incomeSourcesLabel = (() => {
+    const sources = Array.from(
+      new Set(
+        filteredTransactions
+          .filter((t) => t.type === "income")
+          .map((t) => categoryLabel(t.categories)),
+      ),
+    );
+    if (sources.length === 0) return "No deposits recorded this period";
+    if (sources.length === 1) return `${sources[0]} Deposits`;
+    return `${sources.slice(0, 2).join(" & ")} Deposits`;
+  })();
+
+  // Month-over-Month Net Cash Flow Comparison
+  const momChange = (() => {
+    if (isCustomRange || periodParam === "all") return null;
+    const targetMonth = periodParam || currentMonth;
+    const [yearStr, monthStr] = targetMonth.split("-");
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month) return null;
+
+    const prevDate = new Date(year, month - 2, 1);
+    const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
+
+    const prevTxs = ledger.filter((t) =>
+      t.transaction_date?.startsWith(prevMonth),
+    );
+    if (prevTxs.length === 0) return null;
+
+    const prevIncome = prevTxs
+      .filter((t) => t.type === "income")
+      .reduce((acc, t) => acc + Number(t.amount), 0);
+    const prevExpense = prevTxs
+      .filter((t) => t.type === "expense")
+      .reduce((acc, t) => acc + Number(t.amount), 0);
+    const prevNet = prevIncome - prevExpense;
+
+    if (prevNet === 0) return null;
+    const pct = ((netBalance - prevNet) / Math.abs(prevNet)) * 100;
+    return Number(pct.toFixed(1));
+  })();
+
+  // Total Budget & Usage Percentage
+  const totalBudgetLimit = (budgets || []).reduce(
+    (acc, b) => acc + Number(b.monthly_limit || 0),
+    0,
+  );
+  const budgetUsedPct =
+    totalBudgetLimit > 0
+      ? Math.round((totalExpense / totalBudgetLimit) * 100)
+      : null;
+
+  // Expense-to-Income Ratio for Summary Bar
+  const expenseRatio =
+    totalIncome > 0
+      ? Math.min(100, Math.round((totalExpense / totalIncome) * 100))
+      : totalExpense > 0
+        ? 100
+        : 0;
+
+  const topSpendShare =
+    totalExpense > 0 && topCategory
+      ? Math.round((topCategory[1] / totalExpense) * 100)
+      : 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex">
@@ -233,54 +309,121 @@ async function DashboardContent({
         {/* TAB 1: OVERVIEW */}
         {activeTab === "overview" && (
           <div className="space-y-8 animate-in fade-in duration-200">
+            {/* Top 3 KPI Cards with Landing-Page Accuracy & Subtitles */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-slate-400 font-medium">
-                    Period Net Cash Flow
-                  </p>
-                  <p className="text-3xl font-bold mt-2">
-                    ₱{netBalance.toFixed(2)}
-                  </p>
+              {/* Net Cash Flow Card */}
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col justify-between">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-slate-400 font-medium">
+                      Period Net Cash Flow
+                    </p>
+                    <p
+                      className={`text-3xl font-bold mt-2 tracking-tight ${
+                        netBalance < 0 ? "text-red-400" : "text-white"
+                      }`}
+                    >
+                      {netBalance < 0
+                        ? `-${formatPeso(Math.abs(netBalance))}`
+                        : formatPeso(netBalance)}
+                    </p>
+                  </div>
+                  <div className="h-12 w-12 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0">
+                    <Wallet className="h-6 w-6" />
+                  </div>
                 </div>
-                <div className="h-12 w-12 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
-                  <Wallet className="h-6 w-6" />
+                <div className="mt-4 pt-3 border-t border-slate-800/70 flex items-center gap-1.5 text-xs font-medium">
+                  {momChange !== null ? (
+                    momChange >= 0 ? (
+                      <span className="text-emerald-400 flex items-center gap-1">
+                        <TrendingUp className="h-3.5 w-3.5" />+{momChange}% from
+                        last month
+                      </span>
+                    ) : (
+                      <span className="text-red-400 flex items-center gap-1">
+                        <TrendingDown className="h-3.5 w-3.5" />
+                        {momChange}% from last month
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-slate-400">
+                      {netBalance >= 0
+                        ? "Positive net cash position"
+                        : "Net cash deficit in period"}
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-emerald-400 font-medium">
-                    Period Income
-                  </p>
-                  <p className="text-3xl font-bold text-emerald-400 mt-2">
-                    ₱{totalIncome.toFixed(2)}
-                  </p>
+
+              {/* Period Income Card */}
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col justify-between">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-emerald-400 font-medium">
+                      Period Income
+                    </p>
+                    <p className="text-3xl font-bold text-emerald-400 mt-2 tracking-tight">
+                      {formatPeso(totalIncome)}
+                    </p>
+                  </div>
+                  <div className="h-12 w-12 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
+                    <TrendingUp className="h-6 w-6" />
+                  </div>
                 </div>
-                <div className="h-12 w-12 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-                  <TrendingUp className="h-6 w-6" />
+                <div className="mt-4 pt-3 border-t border-slate-800/70 text-xs text-slate-400 font-medium truncate">
+                  {incomeSourcesLabel}
                 </div>
               </div>
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-red-400 font-medium">
-                    Period Expenses
-                  </p>
-                  <p className="text-3xl font-bold text-red-400 mt-2">
-                    ₱{totalExpense.toFixed(2)}
-                  </p>
+
+              {/* Period Expenses Card */}
+              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col justify-between">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-red-400 font-medium">
+                      Period Expenses
+                    </p>
+                    <p className="text-3xl font-bold text-red-400 mt-2 tracking-tight">
+                      {formatPeso(totalExpense)}
+                    </p>
+                  </div>
+                  <div className="h-12 w-12 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center shrink-0">
+                    <TrendingDown className="h-6 w-6" />
+                  </div>
                 </div>
-                <div className="h-12 w-12 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center">
-                  <TrendingDown className="h-6 w-6" />
+                <div className="mt-4 pt-3 border-t border-slate-800/70 text-xs font-medium">
+                  {budgetUsedPct !== null ? (
+                    <span
+                      className={
+                        budgetUsedPct > 100
+                          ? "text-red-400"
+                          : budgetUsedPct > 80
+                            ? "text-amber-400"
+                            : "text-slate-400"
+                      }
+                    >
+                      {budgetUsedPct}% of {formatPeso(totalBudgetLimit, 0)}{" "}
+                      budget used
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">
+                      {
+                        filteredTransactions.filter((t) => t.type === "expense")
+                          .length
+                      }{" "}
+                      expense transactions logged
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
+            {/* Active Range Summary Card */}
             <div className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950/30 p-6">
               <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-blue-400 font-semibold mb-4">
                 <CalendarDays className="h-4 w-4" />
                 Active Range Summary · {displayLabel}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
                 <div>
                   <p className="text-xs text-slate-400">Savings Rate</p>
                   <p className="text-xl font-bold text-slate-100 mt-1">
@@ -291,15 +434,131 @@ async function DashboardContent({
                   <p className="text-xs text-slate-400">Top Spend Category</p>
                   <p className="text-xl font-bold text-slate-100 mt-1">
                     {topCategory
-                      ? `${topCategory[0]} (₱${topCategory[1].toFixed(0)})`
+                      ? `${topCategory[0]} (${formatPeso(topCategory[1])})`
                       : "None"}
                   </p>
                 </div>
-                <div className="flex items-center justify-end">
+                <div className="flex items-center sm:justify-end">
                   <div className="h-10 w-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
                     <PiggyBank className="h-5 w-5" />
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Summary Charts & Visual Report Analysis */}
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
+                    <BarChart3 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-white">
+                      Summary Charts &amp; Financial Report Analysis
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Automated breakdown of cash flow efficiency and spending
+                      concentration for {displayLabel}.
+                    </p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-slate-950 border border-slate-800 text-slate-300 self-start sm:self-auto">
+                  <Activity className="h-3.5 w-3.5 text-blue-400" />
+                  {filteredTransactions.length} Total Transactions
+                </span>
+              </div>
+
+              {/* Mini Summary Progress Bars */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {/* 1. Expense-to-Income Burn Ratio */}
+                <div className="bg-slate-950/70 border border-slate-800/80 p-4 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400 font-medium">
+                      Income Utilization
+                    </span>
+                    <span className="font-bold text-slate-200">
+                      {expenseRatio}% Spent
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        expenseRatio > 85
+                          ? "bg-red-500"
+                          : expenseRatio > 65
+                            ? "bg-amber-500"
+                            : "bg-emerald-500"
+                      }`}
+                      style={{ width: `${expenseRatio}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {formatPeso(totalExpense)} spent out of{" "}
+                    {formatPeso(totalIncome)} inflow.
+                  </p>
+                </div>
+
+                {/* 2. Top Category Concentration */}
+                <div className="bg-slate-950/70 border border-slate-800/80 p-4 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400 font-medium">
+                      Top Category Share
+                    </span>
+                    <span className="font-bold text-blue-400">
+                      {topSpendShare}% of Spend
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                      style={{ width: `${topSpendShare}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    {topCategory
+                      ? `${topCategory[0]} leads total expenses.`
+                      : "No expense concentration yet."}
+                  </p>
+                </div>
+
+                {/* 3. Cash Flow Health Verdict */}
+                <div className="bg-slate-950/70 border border-slate-800/80 p-4 rounded-xl flex flex-col justify-between space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400 font-medium">
+                      Period Health Verdict
+                    </span>
+                    {netBalance >= 0 ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-red-400" />
+                    )}
+                  </div>
+                  <div className="text-sm font-bold">
+                    {netBalance >= 0 ? (
+                      <span className="text-emerald-400">
+                        Healthy Net Surplus (+{formatPeso(netBalance)})
+                      </span>
+                    ) : (
+                      <span className="text-red-400">
+                        Deficit Warning (-{formatPeso(Math.abs(netBalance))})
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {savingsRate !== null && savingsRate >= 20
+                      ? "Exceeds the recommended 20% savings benchmark."
+                      : "Aim for at least a 20% monthly savings buffer."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Embedded Interactive Summary Charts with drill-through disabled */}
+              <div className="pt-2">
+                <ChartsSection
+                  transactions={filteredTransactions}
+                  enableDrillThrough={false}
+                />
               </div>
             </div>
 
@@ -318,7 +577,10 @@ async function DashboardContent({
                 Detailed charts and spending breakdowns for {displayLabel}.
               </p>
             </div>
-            <ChartsSection transactions={filteredTransactions} />
+            <ChartsSection
+              transactions={filteredTransactions}
+              enableDrillThrough={true}
+            />
           </div>
         )}
 
@@ -376,42 +638,7 @@ async function DashboardContent({
         )}
 
         {/* TAB 5: SETTINGS */}
-        {activeTab === "settings" && (
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-2xl space-y-6 animate-in fade-in duration-200">
-            <div>
-              <h2 className="text-xl font-bold tracking-tight">
-                Account Settings
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Manage your profile credentials and security preferences.
-              </p>
-            </div>
-            <div className="border-t border-slate-800 pt-4 space-y-4">
-              <div>
-                <label className="block text-xs uppercase text-slate-400 mb-1 font-medium">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  disabled
-                  value={user.email || ""}
-                  className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-400 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-xs uppercase text-slate-400 mb-1 font-medium">
-                  User ID
-                </label>
-                <input
-                  type="text"
-                  disabled
-                  value={user.id}
-                  className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-400 cursor-not-allowed font-mono text-xs"
-                />
-              </div>
-            </div>
-          </div>
-        )}
+        {activeTab === "settings" && <SettingsSection user={user} />}
       </main>
     </div>
   );

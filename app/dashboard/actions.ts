@@ -1,3 +1,4 @@
+// app/dashboard/actions.ts
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
@@ -87,4 +88,73 @@ export async function logout() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
+}
+
+// ==========================================
+// ACCOUNT & SETTINGS ACTIONS
+// ==========================================
+
+export async function updateProfile(formData: FormData) {
+  const { supabase } = await requireUser();
+  const fullName = String(formData.get("full_name") ?? "").trim();
+
+  const { error } = await supabase.auth.updateUser({
+    data: { full_name: fullName },
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+
+export async function updatePassword(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const currentPassword = String(formData.get("current_password") ?? "");
+  const newPassword = String(formData.get("new_password") ?? "");
+
+  if (!currentPassword || !newPassword) {
+    return { error: "Please enter both your current and new passwords." };
+  }
+
+  // Verify current password by attempting sign in
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email: user.email!,
+    password: currentPassword,
+  });
+
+  if (signInError) {
+    return { error: "Incorrect current password." };
+  }
+
+  // Update to new password
+  const { error: updateError } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
+
+  if (updateError) {
+    return { error: updateError.message };
+  }
+
+  return { success: true };
+}
+
+export async function deleteAccount() {
+  const { supabase, user } = await requireUser();
+
+  // Clear user's data first if foreign keys are not set to cascade
+  await supabase.from("transactions").delete().eq("user_id", user.id);
+  await supabase.from("budgets").delete().eq("user_id", user.id);
+  await supabase.from("categories").delete().eq("user_id", user.id);
+
+  // Sign out user session
+  const { error: signOutError } = await supabase.auth.signOut();
+
+  if (signOutError) {
+    return { error: signOutError.message };
+  }
+
+  return { success: true };
 }

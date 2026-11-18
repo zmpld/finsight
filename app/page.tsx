@@ -17,13 +17,15 @@ export default function HomePage() {
       {/* Top Navigation */}
       <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-3">
             <img
               src="/finsight-logo.png"
-              alt="Logo"
-              className="h-8 w-auto object-contain"
+              alt="Finsight Logo"
+              className="h-8 w-8 object-contain shrink-0 rounded-lg"
             />
-            <span className="font-bold text-lg text-white">Finsight</span>
+            <span className="font-bold text-lg text-white tracking-tight">
+              Finsight
+            </span>
           </Link>
 
           <nav className="hidden md:flex items-center space-x-8 text-sm text-slate-400">
@@ -293,11 +295,11 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-slate-800/80 py-8">
         <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-3">
             <img
               src="/finsight-logo.png"
               alt="Finsight Logo"
-              className="h-6 w-6 object-contain"
+              className="h-6 w-6 object-contain shrink-0 rounded-md"
             />
             <span className="font-semibold text-slate-300">Finsight</span>
             <span>— Personal Finance & Analytics</span>

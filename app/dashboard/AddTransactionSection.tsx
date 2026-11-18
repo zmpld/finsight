@@ -168,7 +168,7 @@ export default function AddTransactionSection({
             />
           </div>
 
-          {/* Category Modal Trigger (Replaces standard select) */}
+          {/* Category Modal Trigger*/}
           <div>
             <label className="block text-xs uppercase text-slate-400 mb-1">
               Category
@@ -212,7 +212,9 @@ export default function AddTransactionSection({
               name="transaction_date"
               defaultValue={today}
               required
-              className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+              className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm 
+              text-slate-100 focus:outline-none focus:border-blue-500 
+              [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:cursor-pointer"
             />
           </div>
 
@@ -230,11 +232,11 @@ export default function AddTransactionSection({
       {/* Category Grid Pop-up Modal */}
       {isModalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center h-full bg-black/75 backdrop-blur-sm p-4"
           onClick={() => setIsModalOpen(false)}
         >
           <div
-            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5"
+            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Top Bar */}
@@ -253,7 +255,7 @@ export default function AddTransactionSection({
             </div>
 
             {/* 4-Column Icon Grid matching wireframe */}
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-[80vh] overflow-y-auto pr-1">
               {/* Unassigned Option */}
               <button
                 type="button"
@@ -313,8 +315,6 @@ export default function AddTransactionSection({
                 );
               })}
             </div>
-
-            {/* Bottom Title matching wireframe */}
             <div className="pt-2 border-t border-slate-800 text-center">
               <p className="text-sm font-semibold text-slate-300">
                 Select a Category
