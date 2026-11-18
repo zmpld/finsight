@@ -88,7 +88,7 @@ export default function TimeframeFilter({
             ))}
             <option value="all">All-Time History</option>
             <option value="custom_toggle">
-              ⚙️ Choose Custom Range (e.g., April to July)...
+              Choose Custom Range (e.g., April to July)...
             </option>
           </select>
         </div>

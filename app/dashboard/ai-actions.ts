@@ -48,7 +48,7 @@ export async function generateFinancialInsights() {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       // gemini-2.5-flash is unavailable to new API keys; use the current flash model.
-      model: "gemini-3.8-flash",
+      model: "gemini-3.1-flash-lite",
       contents: prompt,
     });
 
