@@ -1,12 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   experimental: {
     agentFeedback: true,
   },
+  // Keep Cache Components, but avoid aggressive partial prefetch storms while
+  // auth middleware still needs occasional session refreshes on gated routes.
   cacheComponents: true,
-  partialPrefetching: true,
   turbopack: {
     rules: {
       "*.css": {
