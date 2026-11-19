@@ -152,9 +152,9 @@ export default function SignupPage() {
                   className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200 transition"
                 >
                   {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
                     <Eye className="h-4 w-4" />
+                  ) : (
+                    <EyeOff className="h-4 w-4" />
                   )}
                 </button>
               </div>

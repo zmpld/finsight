@@ -1,8 +1,11 @@
 @import "tailwindcss";
 
+/* Finsight is a dark-first interface, so the base palette is fixed
+   instead of switching with the visitor's OS theme. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #020617; /* slate-950 */
+  --foreground: #f1f5f9; /* slate-100 */
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,15 +15,77 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--background);
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* The previous Arial rule overrode the Geist font loaded in layout.tsx */
+  font-family:
+    var(--font-sans),
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Thin, low-contrast scrollbars that suit a dark UI */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+  background-clip: content-box;
+}
+
+::selection {
+  background: rgb(59 130 246 / 0.35);
+  color: #ffffff;
+}
+
+/* Keep number inputs free of spinner arrows (amounts are typed, not nudged) */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Browser autofill should not flash a white field on dark inputs */
+input:-webkit-autofill,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f1f5f9;
+  box-shadow: 0 0 0 1000px #020617 inset;
+  caret-color: #f1f5f9;
+}
+
+/* Respect users who ask for less motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

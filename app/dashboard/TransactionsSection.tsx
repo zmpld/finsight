@@ -1,7 +1,7 @@
 // app/dashboard/TransactionsSection.tsx
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { deleteTransaction, updateTransaction } from "./actions";
 import {
@@ -33,6 +33,63 @@ interface Transaction {
     | { name?: string; color?: string }[];
 }
 
+type SortKey =
+  | "newest"
+  | "oldest"
+  | "largest"
+  | "smallest"
+  | "date_asc"
+  | "date_desc";
+
+const SORT_GROUPS: { id: SortKey; label: string }[][] = [
+  [
+    { id: "newest", label: "Recently added" },
+    { id: "oldest", label: "Earliest added" },
+  ],
+  [
+    { id: "largest", label: "Largest first" },
+    { id: "smallest", label: "Smallest first" },
+  ],
+  [
+    { id: "date_desc", label: "Date, newest first" },
+    { id: "date_asc", label: "Date, oldest first" },
+  ],
+];
+
+const FILTERS = [
+  { id: "all", label: "All" },
+  { id: "income", label: "Income" },
+  { id: "expense", label: "Expenses" },
+] as const;
+
+const inputClass =
+  "w-full rounded-lg bg-slate-900 border border-slate-700/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors";
+const labelClass = "block text-xs font-medium text-slate-400 mb-1.5";
+const focusRing =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400";
+
+const formatPeso = (val: number | string) =>
+  `₱${Number(val).toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+const formatDate = (d: string) => {
+  if (!d) return "—";
+  const date = new Date(`${d}T00:00:00`);
+  if (isNaN(date.getTime())) return d;
+  return date.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
+const getCategory = (catRef: Transaction["categories"]) => {
+  const c = Array.isArray(catRef) ? catRef[0] : catRef;
+  return { name: c?.name || "Unassigned", color: c?.color || "#64748b" };
+};
+
 export default function TransactionsSection({
   transactions,
   categories,
@@ -47,20 +104,40 @@ export default function TransactionsSection({
     "all",
   );
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<
-    "newest" | "oldest" | "largest" | "smallest" | "date_asc" | "date_desc"
-  >("newest");
+  const [sortBy, setSortBy] = useState<SortKey>("newest");
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const sortRef = useRef<HTMLDivElement>(null);
 
-  // Editing state
+  // Editing + delete-confirm state
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [editDesc, setEditDesc] = useState("");
   const [editAmount, setEditAmount] = useState("");
   const [editType, setEditType] = useState<"income" | "expense">("expense");
   const [editCatId, setEditCatId] = useState("");
   const [editDate, setEditDate] = useState("");
 
+  // Close the sort menu on outside click or Escape
+  useEffect(() => {
+    if (!isSortOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
+        setIsSortOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsSortOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [isSortOpen]);
+
   const handleStartEdit = (t: Transaction) => {
+    setConfirmDeleteId(null);
     setEditingId(t.id);
     setEditDesc(t.description);
     setEditAmount(String(t.amount));
@@ -86,454 +163,401 @@ export default function TransactionsSection({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this transaction?")) return;
-
     const formData = new FormData();
     formData.append("id", id);
 
     await deleteTransaction(formData);
+    setConfirmDeleteId(null);
     startTransition(() => {
       router.refresh();
     });
   };
 
-  // 1. Filter by Type (All / Income / Expense) & Search Query
+  // 1. Filter by type and search query
+  const query = searchQuery.trim().toLowerCase();
   const filtered = transactions.filter((t) => {
     const matchesType = filterType === "all" || t.type === filterType;
-    const catRef = t.categories;
-    const catName = Array.isArray(catRef) ? catRef[0]?.name : catRef?.name;
+    const catName = getCategory(t.categories).name.toLowerCase();
     const matchesSearch =
-      t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (catName && catName.toLowerCase().includes(searchQuery.toLowerCase()));
+      !query ||
+      t.description.toLowerCase().includes(query) ||
+      catName.includes(query);
     return matchesType && matchesSearch;
   });
 
-  // 2. Sort Logic handling proper signed amounts, creation order, and explicit transaction dates
+  // 2. Sort (signed amounts: income positive, expense negative)
   const sortedTransactions = [...filtered].sort((a, b) => {
     const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
     const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
 
-    if (sortBy === "newest") {
-      return timeB - timeA;
-    }
-    if (sortBy === "oldest") {
-      return timeA - timeB;
-    }
+    if (sortBy === "newest") return timeB - timeA;
+    if (sortBy === "oldest") return timeA - timeB;
 
     if (sortBy === "date_asc" || sortBy === "date_desc") {
-      const dateValA = new Date(a.transaction_date || 0).getTime();
-      const dateValB = new Date(b.transaction_date || 0).getTime();
-      return sortBy === "date_asc" ? dateValA - dateValB : dateValB - dateValA;
+      const dA = new Date(a.transaction_date || 0).getTime();
+      const dB = new Date(b.transaction_date || 0).getTime();
+      return sortBy === "date_asc" ? dA - dB : dB - dA;
     }
 
-    // Properly calculate signed amount (Income = positive, Expense = negative)
     const valA = a.type === "income" ? Number(a.amount) : -Number(a.amount);
     const valB = b.type === "income" ? Number(b.amount) : -Number(b.amount);
-
-    if (sortBy === "largest") {
-      return valB - valA; // Highest positive down to lowest negative
-    }
-    if (sortBy === "smallest") {
-      return valA - valB; // Lowest/most negative up to highest positive
-    }
-    return 0;
+    return sortBy === "largest" ? valB - valA : valA - valB;
   });
 
-  const getCategoryName = (catRef: Transaction["categories"]) => {
-    if (!catRef) return "Unassigned";
-    if (Array.isArray(catRef)) return catRef[0]?.name || "Unassigned";
-    return catRef.name || "Unassigned";
-  };
+  const shownNet = sortedTransactions.reduce(
+    (acc, t) => acc + (t.type === "income" ? 1 : -1) * Number(t.amount),
+    0,
+  );
 
-  const getSortLabel = () => {
-    switch (sortBy) {
-      case "newest":
-        return "Newest to Oldest";
-      case "oldest":
-        return "Oldest to Newest";
-      case "date_asc":
-        return "By date (ASC)";
-      case "date_desc":
-        return "By date (DESC)";
-      case "largest":
-        return "Largest to Smallest";
-      case "smallest":
-        return "Smallest to Largest";
-    }
-  };
+  const activeSortLabel =
+    SORT_GROUPS.flat().find((o) => o.id === sortBy)?.label ?? "Sort";
 
   return (
-    <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-6">
-      {/* Header & Sort Dropdown */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <section className="rounded-xl border border-slate-800 bg-slate-900/60">
+      {/* Header */}
+      <header className="px-5 py-4 border-b border-slate-800 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-white">
-            Recent Transactions
-          </h2>
+          <h2 className="text-sm font-semibold text-slate-100">Transactions</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Search, edit, or delete entries without leaving the dashboard.
+            Search, edit or delete entries for the selected period.
           </p>
         </div>
+        <span className="shrink-0 text-xs font-medium px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 tabular-nums">
+          {sortedTransactions.length} of {transactions.length}
+        </span>
+      </header>
 
-        {/* File Explorer Style Sort Dropdown & Shown Badge */}
-        <div className="flex items-center gap-3 relative">
-          {/* Sort Dropdown Button */}
-          <div className="relative">
+      {/* Toolbar */}
+      <div className="px-5 py-4 space-y-3 border-b border-slate-800">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <input
+              type="search"
+              aria-label="Search transactions"
+              placeholder="Search description or category"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={`${inputClass} !bg-slate-950 pl-9`}
+            />
+          </div>
+
+          {/* Sort menu */}
+          <div className="relative" ref={sortRef}>
             <button
               type="button"
-              onClick={() => setIsSortOpen(!isSortOpen)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 text-xs text-slate-300 transition"
+              aria-haspopup="menu"
+              aria-expanded={isSortOpen}
+              onClick={() => setIsSortOpen((o) => !o)}
+              className={`w-full sm:w-auto inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700/80 hover:border-slate-600 text-sm text-slate-300 transition-colors ${focusRing}`}
             >
-              <ArrowUpDown className="h-3.5 w-3.5 text-blue-400" />
-              <span>Sort</span>
-              <ChevronDown className="h-3 w-3 text-slate-400 ml-0.5" />
+              <span className="inline-flex items-center gap-2">
+                <ArrowUpDown className="h-4 w-4 text-slate-500" />
+                {activeSortLabel}
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 text-slate-500 transition-transform ${isSortOpen ? "rotate-180" : ""}`}
+              />
             </button>
 
-            {/* Dropdown Menu with Active Indicators */}
             {isSortOpen && (
               <div
-                className="absolute right-0 mt-2 w-52 rounded-xl bg-slate-950 border border-slate-800 shadow-xl py-1.5 z-30"
-                onMouseLeave={() => setIsSortOpen(false)}
+                role="menu"
+                className="absolute right-0 mt-2 w-56 rounded-lg bg-slate-950 border border-slate-700 shadow-xl py-1 z-30"
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortBy("newest");
-                    setIsSortOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "newest" ? "bg-blue-400" : "bg-transparent"}`}
-                    />
-                    <span>Newest to Oldest</span>
-                  </span>
-                  {sortBy === "newest" && (
-                    <Check className="h-3.5 w-3.5 text-blue-400" />
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortBy("oldest");
-                    setIsSortOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "oldest" ? "bg-blue-400" : "bg-transparent"}`}
-                    />
-                    <span>Oldest to Newest</span>
-                  </span>
-                  {sortBy === "oldest" && (
-                    <Check className="h-3.5 w-3.5 text-blue-400" />
-                  )}
-                </button>
-
-                <div className="border-t border-slate-800 my-1" />
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortBy("largest");
-                    setIsSortOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "largest" ? "bg-blue-400" : "bg-transparent"}`}
-                    />
-                    <span>Largest to Smallest</span>
-                  </span>
-                  {sortBy === "largest" && (
-                    <Check className="h-3.5 w-3.5 text-blue-400" />
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortBy("smallest");
-                    setIsSortOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "smallest" ? "bg-blue-400" : "bg-transparent"}`}
-                    />
-                    <span>Smallest to Largest</span>
-                  </span>
-                  {sortBy === "smallest" && (
-                    <Check className="h-3.5 w-3.5 text-blue-400" />
-                  )}
-                </button>
-
-                <div className="border-t border-slate-800 my-1" />
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortBy("date_asc");
-                    setIsSortOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "date_asc" ? "bg-blue-400" : "bg-transparent"}`}
-                    />
-                    <span>By date (ASC)</span>
-                  </span>
-                  {sortBy === "date_asc" && (
-                    <Check className="h-3.5 w-3.5 text-blue-400" />
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSortBy("date_desc");
-                    setIsSortOpen(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-900 transition text-slate-300"
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${sortBy === "date_desc" ? "bg-blue-400" : "bg-transparent"}`}
-                    />
-                    <span>By date (DESC)</span>
-                  </span>
-                  {sortBy === "date_desc" && (
-                    <Check className="h-3.5 w-3.5 text-blue-400" />
-                  )}
-                </button>
+                {SORT_GROUPS.map((group, gi) => (
+                  <div
+                    key={gi}
+                    className={
+                      gi > 0 ? "border-t border-slate-800 mt-1 pt-1" : ""
+                    }
+                  >
+                    {group.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={sortBy === opt.id}
+                        onClick={() => {
+                          setSortBy(opt.id);
+                          setIsSortOpen(false);
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-300 hover:bg-slate-800/70 transition-colors"
+                      >
+                        {opt.label}
+                        {sortBy === opt.id && (
+                          <Check className="h-4 w-4 text-blue-400" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ))}
               </div>
             )}
           </div>
+        </div>
 
-          {/* Shown Badge */}
-          <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-medium text-slate-400">
-            {sortedTransactions.length} shown
-          </div>
+        {/* Type filter */}
+        <div
+          role="tablist"
+          aria-label="Filter by type"
+          className="inline-flex p-1 rounded-lg bg-slate-950 border border-slate-800"
+        >
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              role="tab"
+              aria-selected={filterType === f.id}
+              onClick={() => setFilterType(f.id)}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${focusRing} ${
+                filterType === f.id
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Search Input */}
-      <div className="relative">
-        <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-500" />
-        <input
-          type="text"
-          placeholder="Search description or category..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full rounded-xl bg-slate-950 border border-slate-800 pl-10 pr-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500 transition"
-        />
+      {/* Column headings (desktop) */}
+      <div className="hidden sm:grid grid-cols-[minmax(0,1fr)_6.5rem_9rem_5rem] gap-x-4 px-5 py-2 text-xs font-medium text-slate-500 border-b border-slate-800">
+        <span>Description</span>
+        <span>Date</span>
+        <span className="text-right">Amount</span>
+        <span className="sr-only">Actions</span>
       </div>
 
-      {/* Filter Tabs (All / Income / Expense) */}
-      <div className="grid grid-cols-3 gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
-        <button
-          type="button"
-          onClick={() => setFilterType("all")}
-          className={`py-2 text-xs font-semibold rounded-lg transition ${
-            filterType === "all"
-              ? "bg-blue-600 text-white shadow"
-              : "text-slate-400 hover:text-white"
-          }`}
+      {/* Rows */}
+      {sortedTransactions.length === 0 ? (
+        <div className="px-6 py-14 text-center text-sm text-slate-500">
+          {transactions.length === 0
+            ? "No transactions in this period. Add one with the form to get started."
+            : "No transactions match your search or filter."}
+        </div>
+      ) : (
+        <ul
+          className={`divide-y divide-slate-800/70 transition-opacity ${isPending ? "opacity-60" : ""}`}
         >
-          All
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilterType("income")}
-          className={`py-2 text-xs font-semibold rounded-lg transition ${
-            filterType === "income"
-              ? "bg-blue-600 text-white shadow"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Income
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilterType("expense")}
-          className={`py-2 text-xs font-semibold rounded-lg transition ${
-            filterType === "expense"
-              ? "bg-blue-600 text-white shadow"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Expense
-        </button>
-      </div>
-
-      {/* Transaction List */}
-      <div className="space-y-3">
-        {sortedTransactions.length === 0 ? (
-          <div className="text-center py-12 text-slate-500 text-sm border border-dashed border-slate-800 rounded-xl">
-            No transactions found matching your filters.
-          </div>
-        ) : (
-          sortedTransactions.map((t) => {
-            const isEditing = editingId === t.id;
-            const categoryName = getCategoryName(t.categories);
+          {sortedTransactions.map((t) => {
             const isIncome = t.type === "income";
+            const cat = getCategory(t.categories);
 
-            if (isEditing) {
+            /* ---- Edit mode ---- */
+            if (editingId === t.id) {
               return (
-                <div
+                <li key={t.id} className="px-5 py-4 bg-slate-950/60">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className={labelClass}>Description</label>
+                        <input
+                          type="text"
+                          value={editDesc}
+                          onChange={(e) => setEditDesc(e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Amount (₱)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editAmount}
+                          onChange={(e) => setEditAmount(e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className={labelClass}>Type</label>
+                        <select
+                          value={editType}
+                          onChange={(e) => {
+                            setEditType(e.target.value as "income" | "expense");
+                            setEditCatId("");
+                          }}
+                          className={inputClass}
+                        >
+                          <option value="expense">Expense</option>
+                          <option value="income">Income</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Category</label>
+                        <select
+                          value={editCatId}
+                          onChange={(e) => setEditCatId(e.target.value)}
+                          className={inputClass}
+                        >
+                          <option value="">Unassigned</option>
+                          {categories
+                            .filter((c) => c.type === editType)
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Date</label>
+                        <input
+                          type="date"
+                          value={editDate}
+                          onChange={(e) => setEditDate(e.target.value)}
+                          className={`${inputClass} [&::-webkit-calendar-picker-indicator]:invert`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        className={`px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm text-slate-200 transition-colors ${focusRing}`}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => handleSaveEdit(t.id)}
+                        className={`px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white transition-colors disabled:opacity-50 ${focusRing}`}
+                      >
+                        {isPending ? "Saving…" : "Save changes"}
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              );
+            }
+
+            /* ---- Delete confirmation ---- */
+            if (confirmDeleteId === t.id) {
+              return (
+                <li
                   key={t.id}
-                  className="bg-slate-950 border border-blue-500/50 p-4 rounded-xl space-y-3 shadow-lg"
+                  className="px-5 py-3.5 bg-red-500/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
-                        Description
-                      </label>
-                      <input
-                        type="text"
-                        value={editDesc}
-                        onChange={(e) => setEditDesc(e.target.value)}
-                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
-                        Amount (₱)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editAmount}
-                        onChange={(e) => setEditAmount(e.target.value)}
-                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
-                        Type
-                      </label>
-                      <select
-                        value={editType}
-                        onChange={(e) =>
-                          setEditType(e.target.value as "income" | "expense")
-                        }
-                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
-                      >
-                        <option value="expense">Expense</option>
-                        <option value="income">Income</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
-                        Category
-                      </label>
-                      <select
-                        value={editCatId}
-                        onChange={(e) => setEditCatId(e.target.value)}
-                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500"
-                      >
-                        <option value="">Unassigned</option>
-                        {categories
-                          .filter((c) => c.type === editType)
-                          .map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] uppercase text-slate-400 mb-1">
-                        Date
-                      </label>
-                      <input
-                        type="date"
-                        value={editDate}
-                        onChange={(e) => setEditDate(e.target.value)}
-                        className="w-full rounded-lg bg-slate-900 border border-slate-800 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500 [&::-webkit-calendar-picker-indicator]:invert"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
+                  <p className="text-sm text-slate-200 min-w-0">
+                    Delete{" "}
+                    <span className="font-medium truncate">
+                      “{t.description}”
+                    </span>
+                    ?{" "}
+                    <span className="text-slate-400">
+                      This can’t be undone.
+                    </span>
+                  </p>
+                  <div className="flex gap-2 shrink-0">
                     <button
                       type="button"
-                      onClick={() => setEditingId(null)}
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition"
+                      onClick={() => setConfirmDeleteId(null)}
+                      className={`px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm text-slate-200 transition-colors ${focusRing}`}
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
                       disabled={isPending}
-                      onClick={() => handleSaveEdit(t.id)}
-                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition disabled:opacity-50"
+                      onClick={() => handleDelete(t.id)}
+                      className={`px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-semibold text-white transition-colors disabled:opacity-50 ${focusRing}`}
                     >
-                      {isPending ? "Saving..." : "Save Changes"}
+                      Delete
                     </button>
                   </div>
-                </div>
+                </li>
               );
             }
 
+            /* ---- Default row ---- */
             return (
-              <div
+              <li
                 key={t.id}
-                className="bg-slate-950 border border-slate-800/80 hover:border-slate-700 p-4 rounded-xl flex items-center justify-between transition"
+                className="group grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[minmax(0,1fr)_6.5rem_9rem_5rem] items-center gap-x-4 px-5 py-3 hover:bg-slate-800/30 transition-colors"
               >
-                <div>
-                  <p className="text-sm font-semibold text-white">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-100 truncate">
                     {t.description}
                   </p>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {categoryName} · {t.transaction_date}
+                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400 min-w-0">
+                    <span
+                      className="h-2 w-2 rounded-full shrink-0"
+                      style={{ backgroundColor: cat.color }}
+                    />
+                    <span className="truncate">{cat.name}</span>
+                    <span className="sm:hidden text-slate-600">·</span>
+                    <span className="sm:hidden whitespace-nowrap">
+                      {formatDate(t.transaction_date)}
+                    </span>
                   </p>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <span
-                    className={`text-sm font-bold ${
-                      isIncome ? "text-emerald-400" : "text-slate-100"
-                    }`}
-                  >
-                    {isIncome
-                      ? `+₱${Number(t.amount).toFixed(2)}`
-                      : `-₱${Number(t.amount).toFixed(2)}`}
-                  </span>
+                <span className="hidden sm:block text-sm text-slate-400 tabular-nums">
+                  {formatDate(t.transaction_date)}
+                </span>
 
-                  <div className="flex items-center gap-1 border-l border-slate-800 pl-3">
-                    <button
-                      type="button"
-                      onClick={() => handleStartEdit(t)}
-                      aria-label="Edit transaction"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(t.id)}
-                      aria-label="Delete transaction"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-800 transition"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+                <span
+                  className={`text-sm font-semibold text-right tabular-nums ${
+                    isIncome ? "text-emerald-400" : "text-slate-100"
+                  }`}
+                >
+                  {isIncome ? "+" : "-"}
+                  {formatPeso(t.amount)}
+                </span>
+
+                <div className="flex items-center justify-end gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    onClick={() => handleStartEdit(t)}
+                    aria-label={`Edit ${t.description}`}
+                    className={`p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors ${focusRing}`}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingId(null);
+                      setConfirmDeleteId(t.id);
+                    }}
+                    aria-label={`Delete ${t.description}`}
+                    className={`p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors ${focusRing}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
-              </div>
+              </li>
             );
-          })
-        )}
-      </div>
-    </div>
+          })}
+        </ul>
+      )}
+
+      {/* Footer summary */}
+      {sortedTransactions.length > 0 && (
+        <footer className="px-5 py-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+          <span>
+            {sortedTransactions.length} transaction
+            {sortedTransactions.length === 1 ? "" : "s"} shown
+          </span>
+          <span>
+            Net{" "}
+            <span
+              className={`font-semibold tabular-nums ${
+                shownNet >= 0 ? "text-emerald-400" : "text-red-400"
+              }`}
+            >
+              {shownNet < 0 ? "-" : ""}
+              {formatPeso(Math.abs(shownNet))}
+            </span>
+          </span>
+        </footer>
+      )}
+    </section>
   );
 }

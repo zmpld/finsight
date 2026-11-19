@@ -9,31 +9,43 @@ import { redirect } from "next/navigation";
 const MAX_DESCRIPTION_LENGTH = 200;
 const MAX_NAME_LENGTH = 80;
 const MAX_AMOUNT = 1_000_000_000; // 1B cap to prevent overflow/abuse
+const MAX_PASSWORD_BYTES = 72; // bcrypt ignores anything longer
+const MIN_YEAR = 1990;
+const MAX_YEAR = 2100;
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+// Plain decimal only: rejects "1e5", "0x10", "Infinity", "+5", " 5 " etc.
+const AMOUNT_REGEX = /^\d{1,10}(\.\d{1,2})?$/;
 
 async function requireUser() {
   const supabase = await createClient();
+  // getUser() re-validates the token with Supabase (never trust getSession on the server)
   const {
     data: { user },
     error,
   } = await supabase.auth.getUser();
   if (error || !user) throw new Error("Unauthorized");
+  // Defense in depth: this id is interpolated into a PostgREST filter below
+  if (!UUID_REGEX.test(user.id)) throw new Error("Unauthorized");
   return { supabase, user };
 }
 
 function isValidDateString(dateStr: string): boolean {
   if (!DATE_REGEX.test(dateStr)) return false;
   const parsed = new Date(`${dateStr}T00:00:00Z`);
-  return (
-    !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(dateStr)
-  );
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    !parsed.toISOString().startsWith(dateStr)
+  ) {
+    return false;
+  }
+  const year = parsed.getUTCFullYear();
+  return year >= MIN_YEAR && year <= MAX_YEAR;
 }
 
 function parseTransactionForm(formData: FormData) {
   const rawAmount = String(formData.get("amount") ?? "").trim();
-  const amount = Number(rawAmount);
   const type = String(formData.get("type") ?? "").trim() as
     | "income"
     | "expense";
@@ -52,13 +64,16 @@ function parseTransactionForm(formData: FormData) {
     );
   }
 
+  const amount = Number(rawAmount);
   if (
-    !rawAmount ||
+    !AMOUNT_REGEX.test(rawAmount) ||
     !Number.isFinite(amount) ||
     amount <= 0 ||
     amount > MAX_AMOUNT
   ) {
-    throw new Error("Amount must be a valid positive number");
+    throw new Error(
+      "Amount must be a valid positive number with up to 2 decimals",
+    );
   }
 
   if (type !== "income" && type !== "expense") {
@@ -151,15 +166,20 @@ export async function updateTransaction(formData: FormData) {
     payload.type,
   );
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("transactions")
     .update(payload)
     .eq("id", id)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("id");
 
   if (error) {
     console.error("Failed to update transaction:", error.message);
     throw new Error("Failed to update transaction. Please try again.");
+  }
+  // Nothing matched: wrong id or not the caller's row
+  if (!data || data.length === 0) {
+    throw new Error("Transaction not found");
   }
 
   revalidatePath("/dashboard");
@@ -172,15 +192,19 @@ export async function deleteTransaction(formData: FormData) {
     throw new Error("Valid transaction ID is required");
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("transactions")
     .delete()
     .eq("id", id)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("id");
 
   if (error) {
     console.error("Failed to delete transaction:", error.message);
     throw new Error("Failed to delete transaction. Please try again.");
+  }
+  if (!data || data.length === 0) {
+    throw new Error("Transaction not found");
   }
 
   revalidatePath("/dashboard");
@@ -240,8 +264,10 @@ export async function updatePassword(formData: FormData) {
     return { error: "Please enter both your current and new passwords." };
   }
 
-  if (newPassword.length < 8 || newPassword.length > 72) {
-    return { error: "New password must be between 8 and 72 characters long." };
+  // Length in bytes, not characters: multi-byte characters count more
+  const newPasswordBytes = new TextEncoder().encode(newPassword).length;
+  if (newPassword.length < 8 || newPasswordBytes > MAX_PASSWORD_BYTES) {
+    return { error: "New password must be 8 to 72 characters long." };
   }
 
   if (currentPassword === newPassword) {
@@ -269,13 +295,62 @@ export async function updatePassword(formData: FormData) {
     return { error: "Failed to update password. Please try again." };
   }
 
+  // Sign out every other device; this session stays signed in
+  const { error: revokeError } = await supabase.auth.signOut({
+    scope: "others",
+  });
+  if (revokeError) {
+    console.error("Failed to revoke other sessions:", revokeError.message);
+  }
+
   return { success: true };
 }
 
-export async function deleteAccount() {
+export async function deleteAccount(formData: FormData) {
   const { supabase, user } = await requireUser();
 
-  // Delete all user-owned rows and verify each step succeeds
+  // Server-side confirmation: never rely on the UI alone for a destructive action
+  const confirmation = String(formData.get("confirmation") ?? "").trim();
+  if (confirmation !== "DELETE") {
+    return { error: "Type DELETE to confirm." };
+  }
+
+  // Password accounts must re-enter their password (protects against a stolen session)
+  const providers: string[] = user.app_metadata?.providers ?? ["email"];
+  const usesPassword = Boolean(user.email) && providers.includes("email");
+  if (usesPassword) {
+    const password = String(formData.get("password") ?? "");
+    if (!password) {
+      return { error: "Enter your password to delete your account." };
+    }
+    const { error: reauthError } = await supabase.auth.signInWithPassword({
+      email: user.email as string,
+      password,
+    });
+    if (reauthError) {
+      return { error: "Incorrect password." };
+    }
+  }
+
+  // Check the server is able to finish the job BEFORE deleting anything,
+  // so the account can never be left half-deleted or reported as deleted when it isn't.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error("deleteAccount: SUPABASE_SERVICE_ROLE_KEY is not configured");
+    return {
+      error:
+        "Account deletion is not available right now. Please contact support.",
+    };
+  }
+
+  // The service-role client is created only here, server-side, and never exposed
+  const adminSupabase = createAdminClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  // Delete all user-owned rows (service role bypasses RLS, so tables that users
+  // can't delete from themselves, like ai_insight_requests, are cleaned too)
   const tables = [
     "transactions",
     "budgets",
@@ -284,7 +359,7 @@ export async function deleteAccount() {
   ] as const;
 
   for (const table of tables) {
-    const { error } = await supabase
+    const { error } = await adminSupabase
       .from(table)
       .delete()
       .eq("user_id", user.id);
@@ -297,23 +372,15 @@ export async function deleteAccount() {
     }
   }
 
-  // If SUPABASE_SERVICE_ROLE_KEY is configured on the server, delete the auth user completely
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (supabaseUrl && serviceRoleKey) {
-    const adminSupabase = createAdminClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    const { error: deleteUserError } =
-      await adminSupabase.auth.admin.deleteUser(user.id);
-    if (deleteUserError) {
-      console.error("Failed to delete auth user:", deleteUserError.message);
-      return {
-        error:
-          "Account data cleared, but auth deletion failed. Please contact support.",
-      };
-    }
+  const { error: deleteUserError } = await adminSupabase.auth.admin.deleteUser(
+    user.id,
+  );
+  if (deleteUserError) {
+    console.error("Failed to delete auth user:", deleteUserError.message);
+    return {
+      error:
+        "Account data cleared, but auth deletion failed. Please contact support.",
+    };
   }
 
   const { error: signOutError } = await supabase.auth.signOut();

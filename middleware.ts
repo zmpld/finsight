@@ -11,24 +11,14 @@ function hasSupabaseAuthCookie(request: NextRequest) {
     );
 }
 
+// This is a convenience gate, not the security boundary: every page and server
+// action also calls supabase.auth.getUser(), and Row Level Security protects the data.
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Login/signup must always be reachable from the landing page.
-  // Do not bounce authenticated users away from these routes.
-  if (pathname.startsWith("/login") || pathname.startsWith("/signup")) {
-    return NextResponse.next();
-  }
-
-  // Only gate the dashboard.
-  if (!pathname.startsWith("/dashboard")) {
-    return NextResponse.next();
-  }
-
   // Fast path: no session cookie → send to login without a network round-trip.
   if (!hasSupabaseAuthCookie(request)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 
@@ -55,6 +45,7 @@ export async function middleware(request: NextRequest) {
     },
   );
 
+  // getUser() validates the token with Supabase; never trust getSession() here
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -62,12 +53,17 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    url.search = "";
     return NextResponse.redirect(url);
   }
+
+  // Keep private pages out of shared caches and out of the back/forward cache after logout
+  supabaseResponse.headers.set("Cache-Control", "private, no-store");
 
   return supabaseResponse;
 }
 
+// Login and signup stay reachable from the landing page, so they are not matched at all
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/signup"],
+  matcher: ["/dashboard/:path*"],
 };
