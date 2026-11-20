@@ -468,21 +468,27 @@ async function DashboardContent({
 
       <main className="flex-1 min-w-0 overflow-y-auto">
         <div className="mx-auto w-full max-w-[1440px] p-5 sm:p-8 lg:p-10 space-y-8">
-          {/* Page header */}
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between pb-6 border-b border-slate-800">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Welcome back, {displayName}
-              </h1>
-              <p className="text-sm text-slate-400 mt-1">
-                Showing data for{" "}
-                <span className="text-slate-200 font-medium">
-                  {displayLabel}
-                </span>
-              </p>
+          {/* Page header: greeting only on Overview, hidden entirely on Settings */}
+          {activeTab !== "settings" && (
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between pb-6 border-b border-slate-800">
+              <div>
+                {activeTab === "overview" && (
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    Welcome back, {displayName}
+                  </h1>
+                )}
+                <p
+                  className={`text-sm text-slate-400 ${activeTab === "overview" ? "mt-1" : ""}`}
+                >
+                  Showing data for{" "}
+                  <span className="text-slate-200 font-medium">
+                    {displayLabel}
+                  </span>
+                </p>
+              </div>
+              <TimeframeFilter currentMonth={currentMonth} />
             </div>
-            <TimeframeFilter currentMonth={currentMonth} />
-          </div>
+          )}
 
           {/* TAB: OVERVIEW */}
           {activeTab === "overview" && (
