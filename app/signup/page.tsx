@@ -1,33 +1,99 @@
 // app/signup/page.tsx
 "use client";
 
-import { useState } from "react";
-import { createClient } from "@/utils/supabase/client";
+import { useState, useEffect } from "react";
+import { signUpAccount } from "../auth/actions";
 import Link from "next/link";
+import { ShieldCheck, FileText, X } from "lucide-react";
 import {
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  ShieldCheck,
-  FileText,
-  X,
-} from "lucide-react";
+  AuthShell,
+  Notice,
+  PasswordInput,
+  authInputClass,
+  authLabelClass,
+  authFocusRing,
+} from "../_components/auth-ui";
+
+type LegalKey = "privacy" | "terms";
+
+const LEGAL: Record<
+  LegalKey,
+  {
+    title: string;
+    icon: typeof ShieldCheck;
+    sections: { heading: string; body: string }[];
+  }
+> = {
+  privacy: {
+    title: "Privacy Policy",
+    icon: ShieldCheck,
+    sections: [
+      {
+        heading: "1. Data minimization and what we store",
+        body: "Finsight collects only the information necessary to provide personal finance tracking: your email address, display name, and the financial records you manually enter or upload via CSV (transaction descriptions, amounts, categories, dates, and monthly budgets). We never ask for or store bank passwords, account numbers, or government IDs.",
+      },
+      {
+        heading: "2. Authentication and data isolation",
+        body: "User authentication is managed securely via Supabase Auth with encrypted passwords and session cookies. All financial data is stored in PostgreSQL protected by Row-Level Security (RLS) so only your authenticated account can read or modify your records.",
+      },
+      {
+        heading: "3. On-demand AI processing",
+        body: "AI Financial Insights run strictly on demand when you click “Generate insights” or “Refresh insights.” Your recent transaction summaries (dates, types, amounts, categories, and descriptions) are sent securely to Google’s Gemini API solely to generate personalized budgeting recommendations.",
+      },
+      {
+        heading: "4. Your control, data retention and deletion",
+        body: "You maintain full ownership of your financial ledger. You may edit or delete individual transactions anytime, or permanently delete your account and data from the Settings tab.",
+      },
+    ],
+  },
+  terms: {
+    title: "Terms of Use",
+    icon: FileText,
+    sections: [
+      {
+        heading: "1. Acceptance of terms",
+        body: "By creating an account and using Finsight, you agree to comply with these Terms of Use and our Privacy Policy. You are responsible for maintaining the confidentiality of your login credentials.",
+      },
+      {
+        heading: "2. Informational purpose only (no financial advice)",
+        body: "Finsight is a personal expense-tracking and visualization tool. Charts, analytics, and AI-generated insights are provided for informational and educational purposes only and do not constitute certified financial, tax, or investment advice.",
+      },
+      {
+        heading: "3. Responsible use and data uploads",
+        body: "You agree not to upload malicious files, falsified CSV payloads, or sensitive third-party banking credentials, and not to abuse or automate requests against our AI insight or authentication endpoints.",
+      },
+      {
+        heading: "4. Account termination",
+        body: "You may discontinue using Finsight and delete your account records at any time through Settings. We reserve the right to suspend accounts that violate security policies or abuse platform resources.",
+      },
+    ],
+  },
+};
+
+const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignupPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [agreedToPolicies, setAgreedToPolicies] = useState(false);
-  const [activeLegalModal, setActiveLegalModal] = useState<
-    "privacy" | "terms" | null
-  >(null);
+  const [activeLegal, setActiveLegal] = useState<LegalKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (!activeLegal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setActiveLegal(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [activeLegal]);
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setError(null);
     setSuccessMessage(null);
 
@@ -37,374 +103,237 @@ export default function SignupPage() {
       );
       return;
     }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(
+        `Use at least ${MIN_PASSWORD_LENGTH} characters for your password.`,
+      );
+      return;
+    }
 
     setLoading(true);
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-            accepted_terms_at: new Date().toISOString(),
-            policy_version: "1.0",
-          },
-        },
-      });
+      const formData = new FormData();
+      formData.append("full_name", fullName);
+      formData.append("email", email);
+      formData.append("password", password);
+      formData.append("agreed", String(agreedToPolicies));
 
-      if (error) {
-        setError(error.message);
-        setLoading(false);
+      const result = await signUpAccount(formData);
+      setLoading(false);
+
+      if (!result.success) {
+        setError(result.error);
         return;
       }
-
-      setLoading(false);
       setSuccessMessage(
-        "We've sent a verification link to your email. Please check your inbox to continue.",
+        result.message ?? "Check your inbox for a verification link.",
       );
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "An unexpected error occurred",
-      );
+    } catch {
+      setError("We couldn’t create your account. Please try again.");
       setLoading(false);
     }
   };
 
+  const legal = activeLegal ? LEGAL[activeLegal] : null;
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-8 text-slate-100">
-      <div className="w-full max-w-md rounded-2xl bg-slate-900 p-8 border border-slate-800 shadow-xl">
-        <h1 className="text-2xl font-bold tracking-tight mb-2">
-          Create an Account
-        </h1>
-        <p className="text-sm text-slate-400 mb-6">
-          Start tracking your finances with Finsight today.
-        </p>
-
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-400 border border-red-500/20">
-            {error}
-          </div>
-        )}
-
-        {successMessage && (
-          <div className="mb-6 rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-4 flex items-start gap-3">
-            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
-            <p className="text-sm text-emerald-300 leading-relaxed">
-              {successMessage}
-            </p>
-          </div>
-        )}
-
-        {!successMessage ? (
-          <form onSubmit={handleSignup} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wider text-slate-400 mb-1">
-                Display Name
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                maxLength={80}
-                autoComplete="name"
-                className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                placeholder="Clark Kent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wider text-slate-400 mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                placeholder="you@example.com"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium uppercase tracking-wider text-slate-400 mb-1">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  autoComplete="new-password"
-                  className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 pr-10 text-sm text-slate-100 focus:border-blue-500 focus:outline-none"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200 transition"
-                >
-                  {showPassword ? (
-                    <Eye className="h-4 w-4" />
-                  ) : (
-                    <EyeOff className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Privacy Policy & Terms of Use Consent */}
-            <div className="pt-1">
-              <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={agreedToPolicies}
-                  onChange={(e) => setAgreedToPolicies(e.target.checked)}
-                  required
-                  className="mt-0.5 h-4 w-4 rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-900"
-                />
-                <span className="text-xs text-slate-400 leading-relaxed">
-                  I agree to Finsight&apos;s{" "}
-                  <button
-                    type="button"
-                    onClick={() => setActiveLegalModal("terms")}
-                    className="text-blue-400 hover:text-blue-300 underline font-medium"
-                  >
-                    Terms of Use
-                  </button>{" "}
-                  and{" "}
-                  <button
-                    type="button"
-                    onClick={() => setActiveLegalModal("privacy")}
-                    className="text-blue-400 hover:text-blue-300 underline font-medium"
-                  >
-                    Privacy Policy
-                  </button>
-                  , including how my transaction data is stored and processed
-                  for AI insights.
-                </span>
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !agreedToPolicies}
-              className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "Creating account..." : "Sign Up"}
-            </button>
-          </form>
-        ) : (
-          <div className="space-y-4">
-            <Link
-              href="/login"
-              className="w-full inline-flex items-center justify-center rounded-lg bg-blue-600 hover:bg-blue-500 py-2.5 text-sm font-semibold text-white transition"
-            >
-              Proceed to Sign In
-            </Link>
-          </div>
-        )}
-
-        <p className="mt-6 text-center text-xs text-slate-400">
+    <AuthShell
+      title="Create your account"
+      subtitle="Start tracking your finances with Finsight."
+      footer={
+        <>
           Already have an account?{" "}
-          <Link href="/login" className="text-blue-400 hover:underline">
+          <Link
+            href="/login"
+            className={`text-blue-400 hover:text-blue-300 font-medium rounded ${authFocusRing}`}
+          >
             Sign in
           </Link>
-        </p>
-      </div>
+        </>
+      }
+    >
+      {error && <Notice type="error">{error}</Notice>}
+      {successMessage && <Notice type="success">{successMessage}</Notice>}
 
-      {/* Legal Policy Modal */}
-      {activeLegalModal && (
+      {!successMessage ? (
+        <form onSubmit={handleSignup} className="space-y-5">
+          <div>
+            <label htmlFor="signup-name" className={authLabelClass}>
+              Display name
+            </label>
+            <input
+              id="signup-name"
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              maxLength={80}
+              autoComplete="name"
+              placeholder="Clark Kent"
+              className={authInputClass}
+            />
+            <p className="mt-1.5 text-xs text-slate-500">
+              You can open more than one account with the same email, as long as
+              each has its own display name.
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor="signup-email" className={authLabelClass}>
+              Email
+            </label>
+            <input
+              id="signup-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+              inputMode="email"
+              placeholder="you@example.com"
+              className={authInputClass}
+            />
+          </div>
+
+          <PasswordInput
+            id="signup-password"
+            label="Password"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+            minLength={MIN_PASSWORD_LENGTH}
+            hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
+          />
+
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={agreedToPolicies}
+              onChange={(e) => setAgreedToPolicies(e.target.checked)}
+              required
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-600 bg-slate-950 accent-blue-600"
+            />
+            <span className="text-sm leading-relaxed text-slate-400">
+              I agree to the{" "}
+              <button
+                type="button"
+                onClick={() => setActiveLegal("terms")}
+                className={`text-blue-400 hover:text-blue-300 underline underline-offset-2 rounded ${authFocusRing}`}
+              >
+                Terms of Use
+              </button>{" "}
+              and{" "}
+              <button
+                type="button"
+                onClick={() => setActiveLegal("privacy")}
+                className={`text-blue-400 hover:text-blue-300 underline underline-offset-2 rounded ${authFocusRing}`}
+              >
+                Privacy Policy
+              </button>
+              , including how my transaction data is stored and processed for AI
+              insights.
+            </span>
+          </label>
+
+          <button
+            type="submit"
+            disabled={loading || !agreedToPolicies}
+            className={`w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${authFocusRing}`}
+          >
+            {loading ? "Creating account…" : "Create account"}
+          </button>
+        </form>
+      ) : (
+        <Link
+          href="/login"
+          className={`inline-flex w-full items-center justify-center rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 transition-colors ${authFocusRing}`}
+        >
+          Go to sign in
+        </Link>
+      )}
+
+      {/* Legal dialog */}
+      {legal && activeLegal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150"
-          onClick={() => setActiveLegalModal(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setActiveLegal(null)}
         >
           <div
-            className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="legal-title"
+            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg">
-                  {activeLegalModal === "privacy" ? (
-                    <ShieldCheck className="h-5 w-5" />
-                  ) : (
-                    <FileText className="h-5 w-5" />
-                  )}
+            <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800 text-slate-300">
+                  <legal.icon className="h-[18px] w-[18px]" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-white">
-                    {activeLegalModal === "privacy"
-                      ? "Privacy Policy"
-                      : "Terms of Use"}
+                  <h2
+                    id="legal-title"
+                    className="text-sm font-semibold text-white"
+                  >
+                    {legal.title}
                   </h2>
-                  <p className="text-[11px] text-slate-400">
-                    Effective Date: November 2026 · Version 1.0
+                  <p className="text-xs text-slate-400">
+                    Effective November 2026 · Version 1.0
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setActiveLegalModal(null)}
-                aria-label="Close modal"
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                onClick={() => setActiveLegal(null)}
+                aria-label="Close"
+                autoFocus
+                className={`rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors ${authFocusRing}`}
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Modal Content */}
-            <div className="p-5 overflow-y-auto space-y-4 text-xs text-slate-300 leading-relaxed">
-              {activeLegalModal === "privacy" ? (
-                <>
-                  <div>
-                    <h3 className="text-white font-semibold mb-1">
-                      1. Data Minimization &amp; What We Store
-                    </h3>
-                    <p className="text-slate-400">
-                      Finsight collects only the information necessary to
-                      provide personal finance tracking: your email address,
-                      display name, and the financial records you manually enter
-                      or upload via CSV (transaction descriptions, amounts,
-                      categories, dates, and monthly budgets). We never ask for
-                      or store bank passwords, account numbers, or government
-                      IDs.
-                    </p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-white font-semibold mb-1">
-                      2. Authentication &amp; Data Isolation
-                    </h3>
-                    <p className="text-slate-400">
-                      User authentication is managed securely via Supabase Auth
-                      with encrypted passwords and session cookies. All
-                      financial data is stored in PostgreSQL protected by
-                      Row-Level Security (RLS) so only your authenticated
-                      account can read or modify your records.
-                    </p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-white font-semibold mb-1">
-                      3. On-Demand AI Processing
-                    </h3>
-                    <p className="text-slate-400">
-                      AI Financial Insights run strictly on-demand when you
-                      click &ldquo;Generate Insights&rdquo; or &ldquo;Refresh
-                      Insights.&rdquo; Your recent transaction summaries (dates,
-                      types, amounts, categories, and descriptions) are sent
-                      securely to Google&apos;s Gemini API solely to generate
-                      personalized budgeting recommendations.
-                    </p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-white font-semibold mb-1">
-                      4. Your Control, Data Retention &amp; Deletion
-                    </h3>
-                    <p className="text-slate-400">
-                      You maintain full ownership of your financial ledger. You
-                      may edit or delete individual transactions anytime, or
-                      permanently wipe your account data from the Account
-                      Settings tab.
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <h3 className="text-white font-semibold mb-1">
-                      1. Acceptance of Terms
-                    </h3>
-                    <p className="text-slate-400">
-                      By creating an account and using Finsight, you agree to
-                      comply with these Terms of Use and our Privacy Policy. You
-                      are responsible for maintaining the confidentiality of
-                      your login credentials.
-                    </p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-white font-semibold mb-1">
-                      2. Informational Purpose Only (No Financial Advice)
-                    </h3>
-                    <p className="text-slate-400">
-                      Finsight is a personal expense-tracking and visualization
-                      tool. Charts, analytics, and AI-generated insights are
-                      provided for informational and educational purposes only
-                      and do not constitute certified financial, tax, or
-                      investment advice.
-                    </p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-white font-semibold mb-1">
-                      3. Responsible Use &amp; Data Uploads
-                    </h3>
-                    <p className="text-slate-400">
-                      You agree not to upload malicious files, falsified CSV
-                      payloads, or sensitive third-party banking credentials,
-                      and not to abuse or automate requests against our AI
-                      insight or authentication endpoints.
-                    </p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-white font-semibold mb-1">
-                      4. Account Termination
-                    </h3>
-                    <p className="text-slate-400">
-                      You may discontinue using Finsight and delete your account
-                      records at any time through Account Settings. We reserve
-                      the right to suspend accounts that violate security
-                      policies or abuse platform resources.
-                    </p>
-                  </div>
-                </>
-              )}
+            <div className="space-y-5 overflow-y-auto px-5 py-5">
+              {legal.sections.map((s) => (
+                <section key={s.heading}>
+                  <h3 className="mb-1 text-sm font-semibold text-slate-100">
+                    {s.heading}
+                  </h3>
+                  <p className="text-sm leading-relaxed text-slate-400">
+                    {s.body}
+                  </p>
+                </section>
+              ))}
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between gap-3">
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveLegalModal(
-                      activeLegalModal === "privacy" ? "terms" : "privacy",
-                    )
-                  }
-                  className="text-xs text-slate-400 hover:text-white transition"
-                >
-                  View{" "}
-                  {activeLegalModal === "privacy"
-                    ? "Terms of Use"
-                    : "Privacy Policy"}
-                </button>
-              </div>
+            <div className="flex items-center justify-between gap-3 border-t border-slate-800 px-5 py-4">
+              <button
+                type="button"
+                onClick={() =>
+                  setActiveLegal(
+                    activeLegal === "privacy" ? "terms" : "privacy",
+                  )
+                }
+                className={`rounded text-sm text-slate-400 hover:text-white transition-colors ${authFocusRing}`}
+              >
+                View{" "}
+                {activeLegal === "privacy" ? "Terms of Use" : "Privacy Policy"}
+              </button>
               <button
                 type="button"
                 onClick={() => {
                   setAgreedToPolicies(true);
-                  setActiveLegalModal(null);
+                  setActiveLegal(null);
                 }}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition"
+                className={`rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-colors ${authFocusRing}`}
               >
-                I Understand &amp; Agree
+                I understand and agree
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </AuthShell>
   );
 }

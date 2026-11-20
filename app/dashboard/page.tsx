@@ -270,31 +270,43 @@ async function DashboardContent({
 
   let displayLabel = formatMonthLabel(currentMonth);
 
+  const [
+    { data: rawCategories },
+    { data: transactions },
+    { data: budgets },
+    { data: profile },
+  ] = await Promise.all([
+    supabase
+      .from("categories")
+      .select("id, name, type, color, is_default, user_id")
+      .or(`user_id.eq.${user.id},is_default.eq.true`),
+    supabase
+      .from("transactions")
+      .select(
+        "id, type, amount, description, transaction_date, created_at, category_id, categories(name, color)",
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1000),
+    supabase
+      .from("budgets")
+      .select("id, category_id, monthly_limit, month_year, categories(name)")
+      .eq("user_id", user.id)
+      .eq("month_year", activeBudgetMonth),
+    supabase
+      .from("profiles")
+      .select("display_name, contact_email")
+      .eq("id", user.id)
+      .maybeSingle(),
+  ]);
+
+  // The profiles table is the source of truth for the name and contact email
   const displayName =
+    profile?.display_name?.trim() ||
     (user.user_metadata?.full_name as string | undefined)?.trim() ||
     user.email?.split("@")[0] ||
     "there";
-
-  const [{ data: rawCategories }, { data: transactions }, { data: budgets }] =
-    await Promise.all([
-      supabase
-        .from("categories")
-        .select("id, name, type, color, is_default, user_id")
-        .or(`user_id.eq.${user.id},is_default.eq.true`),
-      supabase
-        .from("transactions")
-        .select(
-          "id, type, amount, description, transaction_date, created_at, category_id, categories(name, color)",
-        )
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1000),
-      supabase
-        .from("budgets")
-        .select("id, category_id, monthly_limit, month_year, categories(name)")
-        .eq("user_id", user.id)
-        .eq("month_year", activeBudgetMonth),
-    ]);
+  const contactEmail = profile?.contact_email || user.email || "";
 
   const categoryMap = new Map();
   for (const cat of rawCategories || []) {
@@ -742,7 +754,13 @@ async function DashboardContent({
           )}
 
           {/* TAB: SETTINGS */}
-          {activeTab === "settings" && <SettingsSection user={user} />}
+          {activeTab === "settings" && (
+            <SettingsSection
+              user={user}
+              displayName={displayName}
+              contactEmail={contactEmail}
+            />
+          )}
         </div>
       </main>
     </div>

@@ -1,3 +1,4 @@
+// utils/supabase/server.ts
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
@@ -15,9 +16,16 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
+              cookieStore.set(name, value, {
+                ...options,
+                // Only send auth cookies over HTTPS in production
+                secure: process.env.NODE_ENV === "production",
+              }),
             );
-          } catch {}
+          } catch {
+            // Called from a Server Component, where cookies can't be written.
+            // Safe to ignore: the middleware refreshes the session instead.
+          }
         },
       },
     },

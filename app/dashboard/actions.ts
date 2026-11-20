@@ -221,9 +221,10 @@ export async function logout() {
 // ==========================================
 
 export async function updateProfile(formData: FormData) {
-  const { supabase } = await requireUser();
+  const { supabase, user } = await requireUser();
   const fullName = String(formData.get("full_name") ?? "")
     .replace(/[\x00-\x1F\x7F]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 
   if (!fullName) {
@@ -236,12 +237,49 @@ export async function updateProfile(formData: FormData) {
     };
   }
 
-  const { error } = await supabase.auth.updateUser({
-    data: { full_name: fullName },
+  // Remember the current value so we can roll back if the second write fails
+  const { data: current } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  // 1) The profiles table is the source of truth. A unique index on
+  //    (contact_email, lower(display_name)) rejects names already used by
+  //    another account that shares this email.
+  const { data: updated, error: profileError } = await supabase
+    .from("profiles")
+    .update({ display_name: fullName })
+    .eq("id", user.id)
+    .select("id");
+
+  if (profileError) {
+    if (profileError.code === "23505") {
+      return {
+        error:
+          "Another account with your email already uses that display name.",
+      };
+    }
+    console.error("Failed to update profile row:", profileError.message);
+    return { error: "Failed to update profile. Please try again." };
+  }
+  if (!updated || updated.length === 0) {
+    return { error: "Profile not found. Please sign out and back in." };
+  }
+
+  // 2) Mirror it into Supabase Auth so the Auth dashboard shows the same name
+  const { error: authError } = await supabase.auth.updateUser({
+    data: { full_name: fullName, display_name: fullName },
   });
 
-  if (error) {
-    console.error("Failed to update profile:", error.message);
+  if (authError) {
+    console.error("Failed to update auth metadata:", authError.message);
+    if (current?.display_name) {
+      await supabase
+        .from("profiles")
+        .update({ display_name: current.display_name })
+        .eq("id", user.id);
+    }
     return { error: "Failed to update profile. Please try again." };
   }
 
@@ -370,6 +408,19 @@ export async function deleteAccount(formData: FormData) {
           "Unable to delete all account records right now. Please try again.",
       };
     }
+  }
+
+  // profiles is keyed by id (and also cascades when the auth user is deleted)
+  const { error: profileDeleteError } = await adminSupabase
+    .from("profiles")
+    .delete()
+    .eq("id", user.id);
+  if (profileDeleteError) {
+    console.error("Failed to delete profile:", profileDeleteError.message);
+    return {
+      error:
+        "Unable to delete all account records right now. Please try again.",
+    };
   }
 
   const { error: deleteUserError } = await adminSupabase.auth.admin.deleteUser(

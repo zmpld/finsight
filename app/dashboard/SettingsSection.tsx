@@ -127,9 +127,9 @@ function PasswordField({
           className={`absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-200 transition-colors ${focusRing}`}
         >
           {visible ? (
-            <Eye className="h-4 w-4" />
-          ) : (
             <EyeOff className="h-4 w-4" />
+          ) : (
+            <Eye className="h-4 w-4" />
           )}
         </button>
       </div>
@@ -138,7 +138,15 @@ function PasswordField({
   );
 }
 
-export default function SettingsSection({ user }: { user: any }) {
+export default function SettingsSection({
+  user,
+  displayName,
+  contactEmail,
+}: {
+  user: any;
+  displayName?: string;
+  contactEmail?: string;
+}) {
   const router = useRouter();
 
   // Whether this account signs in with a password (the server re-checks this)
@@ -149,7 +157,7 @@ export default function SettingsSection({ user }: { user: any }) {
   // Profile
   const [profilePending, startProfile] = useTransition();
   const [fullName, setFullName] = useState<string>(
-    user.user_metadata?.full_name || "",
+    displayName ?? user.user_metadata?.full_name ?? "",
   );
   const [profileMessage, setProfileMessage] = useState<Message>(null);
 
@@ -294,7 +302,7 @@ export default function SettingsSection({ user }: { user: any }) {
                 id="settings-email"
                 type="email"
                 disabled
-                value={user.email || ""}
+                value={contactEmail || user.email || ""}
                 className={inputClass}
               />
               <p className="text-xs text-slate-500 mt-1.5">

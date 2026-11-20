@@ -1,312 +1,487 @@
 // app/page.tsx
 import Link from "next/link";
+import Image from "next/image";
 import {
   TrendingUp,
+  TrendingDown,
   PieChart,
   Sparkles,
   Upload,
   ShieldCheck,
   ArrowRight,
   Wallet,
+  PiggyBank,
   CheckCircle2,
+  Target,
 } from "lucide-react";
 
+const focusRing =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400";
+
+/* Sample data for the preview. Figures are internally consistent:
+   112,000 income - 27,750 expenses = 84,250 net; 27,750 / 40,000 budget = 69%. */
+const SAMPLE_MONTHS = [
+  { m: "Jun", income: 98, expense: 31 },
+  { m: "Jul", income: 104, expense: 34 },
+  { m: "Aug", income: 101, expense: 29 },
+  { m: "Sep", income: 108, expense: 33 },
+  { m: "Oct", income: 105, expense: 30 },
+  { m: "Nov", income: 112, expense: 27.75 },
+];
+const SAMPLE_CATEGORIES = [
+  { name: "Housing", amount: "₱9,500.00", share: 34 },
+  { name: "Food", amount: "₱6,200.00", share: 22 },
+  { name: "Transport", amount: "₱4,100.00", share: 15 },
+  { name: "Utilities", amount: "₱3,450.00", share: 12 },
+];
+
+const FEATURES = [
+  {
+    icon: PieChart,
+    title: "Visual analytics",
+    body: "Interactive cash flow charts and category breakdowns that show where your money goes.",
+  },
+  {
+    icon: Target,
+    title: "Monthly budgets",
+    body: "Set a limit per category and watch progress bars warn you before you overspend.",
+  },
+  {
+    icon: Sparkles,
+    title: "AI insights",
+    body: "On request, get tailored savings suggestions based on your recent spending, powered by Google Gemini.",
+  },
+  {
+    icon: Upload,
+    title: "CSV import",
+    body: "Upload a statement in bulk. Dates, descriptions, amounts and categories are checked before anything is saved.",
+  },
+];
+
+const STEPS = [
+  {
+    n: "1",
+    title: "Add your transactions",
+    body: "Enter them as you spend, or import a CSV statement in seconds.",
+  },
+  {
+    n: "2",
+    title: "Set your budgets",
+    body: "Choose spending limits for the categories that matter most.",
+  },
+  {
+    n: "3",
+    title: "Review and improve",
+    body: "Read your charts and AI insights, then adjust next month.",
+  },
+];
+
 export default function HomePage() {
+  const maxValue = 120;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-blue-500/30 selection:text-blue-200">
-      {/* Top Navigation */}
-      <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <img
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+          <Link
+            href="/"
+            className={`flex items-center gap-3 rounded-lg ${focusRing}`}
+          >
+            <Image
               src="/finsight-logo.png"
-              alt="Finsight Logo"
-              className="h-8 w-8 object-contain shrink-0 rounded-lg"
+              alt=""
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-lg object-contain"
+              priority
             />
-            <span className="font-bold text-lg text-white tracking-tight">
+            <span className="text-lg font-semibold tracking-tight text-white">
               Finsight
             </span>
           </Link>
 
-          <nav className="hidden md:flex items-center space-x-8 text-sm text-slate-400">
-            <a href="#features" className="hover:text-slate-100 transition">
+          <nav
+            aria-label="Sections"
+            className="hidden items-center gap-8 text-sm text-slate-400 md:flex"
+          >
+            <a
+              href="#features"
+              className="hover:text-slate-100 transition-colors"
+            >
               Features
             </a>
-            <a href="#preview" className="hover:text-slate-100 transition">
-              Analytics
+            <a
+              href="#preview"
+              className="hover:text-slate-100 transition-colors"
+            >
+              Preview
             </a>
-            <a href="#security" className="hover:text-slate-100 transition">
+            <a
+              href="#security"
+              className="hover:text-slate-100 transition-colors"
+            >
               Security
             </a>
           </nav>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-2">
             <Link
               href="/login"
-              className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition"
+              className={`rounded-lg px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors ${focusRing}`}
             >
-              Sign In
+              Sign in
             </Link>
             <Link
               href="/signup"
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white transition shadow-lg shadow-blue-600/20"
+              className={`rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 transition-colors ${focusRing}`}
             >
-              Get Started
+              Get started
             </Link>
           </div>
         </div>
       </header>
 
       <main className="flex-1">
-        {/* Hero Section */}
-        <section className="relative overflow-hidden pt-20 pb-24 lg:pt-28 lg:pb-32">
-          {/* Subtle background glow */}
-          <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-blue-600/15 blur-[120px] rounded-full" />
-
-          <div className="max-w-7xl mx-auto px-6 relative z-10 text-center">
-            <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs font-medium text-blue-400 mb-6">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>AI-Powered Personal Finance & Budgeting</span>
-            </div>
-
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white max-w-4xl mx-auto leading-[1.15]">
-              Master every peso with{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
-                intelligent clarity.
-              </span>
-            </h1>
-
-            <p className="mt-6 text-base sm:text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
-              Track income and expenses in real time, import bank CSV statements
-              in seconds, monitor monthly category budgets, and unlock
-              actionable financial insights powered by Gemini AI.
+        {/* Hero */}
+        <section className="pt-20 pb-20 lg:pt-28 lg:pb-24">
+          <div className="mx-auto max-w-7xl px-6 text-center">
+            <p className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-slate-300">
+              <Sparkles className="h-3.5 w-3.5 text-blue-400" />
+              Personal finance and budgeting, with AI insights
             </p>
 
-            <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <h1 className="mx-auto max-w-4xl text-4xl font-semibold leading-[1.1] tracking-tight text-white sm:text-5xl lg:text-6xl">
+              Know where every peso goes, and{" "}
+              <span className="text-blue-400">where it should go next.</span>
+            </h1>
+
+            <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-slate-400 sm:text-lg">
+              Track income and expenses, import bank CSV statements, monitor
+              monthly category budgets, and get clear insights from your own
+              data.
+            </p>
+
+            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href="/signup"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white transition shadow-lg shadow-blue-600/25"
+                className={`inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-7 py-3 text-sm font-semibold text-white hover:bg-blue-500 transition-colors sm:w-auto ${focusRing}`}
               >
-                <span>Create Free Account</span>
+                Create free account
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
                 href="/login"
-                className="w-full sm:w-auto inline-flex items-center justify-center px-7 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-sm font-semibold text-slate-200 transition"
+                className={`inline-flex w-full items-center justify-center rounded-lg border border-slate-700 bg-slate-900 px-7 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition-colors sm:w-auto ${focusRing}`}
               >
-                Sign In to Dashboard
+                Sign in to dashboard
               </Link>
-            </div>
-
-            {/* Dashboard Mockup Preview */}
-            <div
-              id="preview"
-              className="mt-16 max-w-5xl mx-auto rounded-2xl bg-slate-900/90 border border-slate-800 p-4 sm:p-6 shadow-2xl text-left"
-            >
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
-                <div className="flex items-center space-x-2">
-                  <span className="h-3 w-3 rounded-full bg-red-500/80" />
-                  <span className="h-3 w-3 rounded-full bg-amber-500/80" />
-                  <span className="h-3 w-3 rounded-full bg-emerald-500/80" />
-                  <span className="ml-3 text-xs font-mono text-slate-500">
-                    finsight.app/dashboard
-                  </span>
-                </div>
-                <span className="text-xs px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-                  Live Sync Active
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-slate-950 border border-slate-800/80 p-5 rounded-xl">
-                  <p className="text-xs uppercase tracking-wider text-slate-400">
-                    Net Balance
-                  </p>
-                  <p className="text-2xl font-bold text-white mt-1.5">
-                    ₱84,250.00
-                  </p>
-                  <p className="text-xs text-emerald-400 mt-2 flex items-center gap-1">
-                    <TrendingUp className="h-3.5 w-3.5" /> +14.2% from last
-                    month
-                  </p>
-                </div>
-
-                <div className="bg-slate-950 border border-slate-800/80 p-5 rounded-xl">
-                  <p className="text-xs uppercase tracking-wider text-emerald-400">
-                    Monthly Income
-                  </p>
-                  <p className="text-2xl font-bold text-emerald-400 mt-1.5">
-                    ₱112,000.00
-                  </p>
-                  <p className="text-xs text-slate-500 mt-2">
-                    Salary & Freelance Deposits
-                  </p>
-                </div>
-
-                <div className="bg-slate-950 border border-slate-800/80 p-5 rounded-xl">
-                  <p className="text-xs uppercase tracking-wider text-red-400">
-                    Monthly Expenses
-                  </p>
-                  <p className="text-2xl font-bold text-red-400 mt-1.5">
-                    ₱27,750.00
-                  </p>
-                  <p className="text-xs text-slate-500 mt-2">
-                    68% of ₱40,000 budget used
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-xl bg-blue-500/5 border border-blue-500/20 p-4 flex items-start gap-3">
-                <Sparkles className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">
-                    Gemini AI Financial Insight
-                  </p>
-                  <p className="text-sm text-slate-300 mt-1">
-                    Your dining expenses decreased by 18% this week.
-                    Reallocating ₱3,500 to your Emergency Fund keeps you on
-                    track to hit your Q4 savings target ahead of schedule.
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
         </section>
 
-        {/* Features Section */}
+        {/* Preview */}
+        <section id="preview" className="pb-24 scroll-mt-20">
+          <div className="mx-auto max-w-6xl px-6">
+            <figure
+              aria-label="Sample dashboard preview"
+              className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-left sm:p-6"
+            >
+              <figcaption className="mb-5 flex items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                <span className="text-sm font-semibold text-slate-100">
+                  November 2026
+                </span>
+                <span className="rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300">
+                  Sample data
+                </span>
+              </figcaption>
+
+              {/* KPIs */}
+              <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm text-slate-400">Net cash flow</p>
+                      <p className="mt-1 text-xl font-semibold tabular-nums text-white">
+                        ₱84,250.00
+                      </p>
+                    </div>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800 text-slate-300">
+                      <Wallet className="h-[18px] w-[18px]" />
+                    </span>
+                  </div>
+                  <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+                    <TrendingUp className="h-3.5 w-3.5" /> +14.2% vs last month
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm text-slate-400">Income</p>
+                      <p className="mt-1 text-xl font-semibold tabular-nums text-emerald-400">
+                        ₱112,000.00
+                      </p>
+                    </div>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+                      <TrendingUp className="h-[18px] w-[18px]" />
+                    </span>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-400">
+                    Salary and freelance deposits
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm text-slate-400">Expenses</p>
+                      <p className="mt-1 text-xl font-semibold tabular-nums text-red-400">
+                        ₱27,750.00
+                      </p>
+                    </div>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500/10 text-red-400">
+                      <TrendingDown className="h-[18px] w-[18px]" />
+                    </span>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-400">
+                    69% of ₱40,000 budget used
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm text-slate-400">Savings rate</p>
+                      <p className="mt-1 text-xl font-semibold tabular-nums text-emerald-400">
+                        75%
+                      </p>
+                    </div>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+                      <PiggyBank className="h-[18px] w-[18px]" />
+                    </span>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-400">
+                    Above the 20% benchmark
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+                {/* Monthly bars */}
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 lg:col-span-3">
+                  <div className="mb-4 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-100">
+                      Monthly cash flow
+                    </p>
+                    <div className="flex items-center gap-4 text-xs text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />{" "}
+                        Income
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-red-500" />{" "}
+                        Expenses
+                      </span>
+                    </div>
+                  </div>
+                  <div
+                    className="flex h-44 items-end gap-3 border-b border-slate-800 px-1"
+                    aria-hidden="true"
+                  >
+                    {SAMPLE_MONTHS.map((d) => (
+                      <div
+                        key={d.m}
+                        className="flex h-full flex-1 items-end justify-center gap-1"
+                      >
+                        <div
+                          className="w-full max-w-[22px] rounded-t bg-emerald-500"
+                          style={{ height: `${(d.income / maxValue) * 100}%` }}
+                        />
+                        <div
+                          className="w-full max-w-[22px] rounded-t bg-red-500"
+                          style={{ height: `${(d.expense / maxValue) * 100}%` }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div
+                    className="mt-2 flex gap-3 px-1 text-xs text-slate-500"
+                    aria-hidden="true"
+                  >
+                    {SAMPLE_MONTHS.map((d) => (
+                      <span key={d.m} className="flex-1 text-center">
+                        {d.m}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Top categories */}
+                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 lg:col-span-2">
+                  <p className="mb-4 text-sm font-semibold text-slate-100">
+                    Top spending categories
+                  </p>
+                  <ul className="space-y-3.5">
+                    {SAMPLE_CATEGORIES.map((c) => (
+                      <li key={c.name} className="space-y-1.5">
+                        <div className="flex items-baseline justify-between text-sm">
+                          <span className="text-slate-200">{c.name}</span>
+                          <span className="tabular-nums text-slate-300">
+                            {c.amount}{" "}
+                            <span className="ml-1 text-slate-500">
+                              {c.share}%
+                            </span>
+                          </span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+                          <div
+                            className="h-full rounded-full bg-blue-500"
+                            style={{ width: `${c.share}%` }}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-100">
+                    AI insight
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-400">
+                    Your dining spend dropped 18% this week. Moving ₱3,500 into
+                    your emergency fund keeps your Q4 savings target on track.
+                  </p>
+                </div>
+              </div>
+            </figure>
+          </div>
+        </section>
+
+        {/* Features */}
         <section
           id="features"
-          className="py-20 border-t border-slate-800/80 bg-slate-900/30"
+          className="scroll-mt-20 border-t border-slate-800 bg-slate-900/30 py-20"
         >
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="text-center max-w-2xl mx-auto mb-16">
-              <h2 className="text-3xl font-bold tracking-tight text-white">
-                Built for speed, clarity, and control
+          <div className="mx-auto max-w-7xl px-6">
+            <div className="mx-auto mb-14 max-w-2xl text-center">
+              <h2 className="text-3xl font-semibold tracking-tight text-white">
+                Built for speed, clarity and control
               </h2>
-              <p className="mt-3 text-sm sm:text-base text-slate-400">
-                Everything you need to organize personal cash flow without
-                bloated spreadsheets.
+              <p className="mt-3 text-base text-slate-400">
+                Everything you need to organize personal cash flow without messy
+                spreadsheets.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-slate-700 transition">
-                <div className="h-11 w-11 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center mb-4">
-                  <PieChart className="h-5 w-5" />
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
+              {FEATURES.map(({ icon: Icon, title, body }) => (
+                <div
+                  key={title}
+                  className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 transition-colors hover:border-slate-700"
+                >
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-blue-400">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="mb-2 text-base font-semibold text-white">
+                    {title}
+                  </h3>
+                  <p className="text-sm leading-relaxed text-slate-400">
+                    {body}
+                  </p>
                 </div>
-                <h3 className="text-base font-semibold text-white mb-2">
-                  Visual Analytics
-                </h3>
-                <p className="text-sm text-slate-400 leading-relaxed">
-                  Interactive cash flow charts and category breakdowns that
-                  instantly show where your money goes.
-                </p>
-              </div>
-
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-slate-700 transition">
-                <div className="h-11 w-11 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-4">
-                  <TrendingUp className="h-5 w-5" />
-                </div>
-                <h3 className="text-base font-semibold text-white mb-2">
-                  Smart Monthly Budgets
-                </h3>
-                <p className="text-sm text-slate-400 leading-relaxed">
-                  Set spending caps per category and monitor real-time progress
-                  bars before you overspend.
-                </p>
-              </div>
-
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-slate-700 transition">
-                <div className="h-11 w-11 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center mb-4">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <h3 className="text-base font-semibold text-white mb-2">
-                  AI Financial Advisor
-                </h3>
-                <p className="text-sm text-slate-400 leading-relaxed">
-                  Analyze spending habits and receive tailored savings
-                  recommendations powered by Google Gemini.
-                </p>
-              </div>
-
-              <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-slate-700 transition">
-                <div className="h-11 w-11 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center mb-4">
-                  <Upload className="h-5 w-5" />
-                </div>
-                <h3 className="text-base font-semibold text-white mb-2">
-                  One-Click CSV Import
-                </h3>
-                <p className="text-sm text-slate-400 leading-relaxed">
-                  Upload bank statements in bulk with automatic parsing for
-                  dates, descriptions, and amounts.
-                </p>
-              </div>
+              ))}
             </div>
           </div>
         </section>
 
-        {/* Security & Trust Banner */}
-        <section id="security" className="py-20 border-t border-slate-800/80">
-          <div className="max-w-5xl mx-auto px-6">
-            <div className="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950/40 border border-slate-800 p-8 sm:p-12 flex flex-col lg:flex-row items-center justify-between gap-8">
-              <div className="space-y-4 max-w-xl">
-                <div className="inline-flex items-center space-x-2 text-emerald-400 text-xs font-semibold uppercase tracking-wider">
+        {/* How it works */}
+        <section className="border-t border-slate-800 py-20">
+          <div className="mx-auto max-w-5xl px-6">
+            <h2 className="mb-12 text-center text-3xl font-semibold tracking-tight text-white">
+              How it works
+            </h2>
+            <ol className="grid grid-cols-1 gap-8 md:grid-cols-3">
+              {STEPS.map((s) => (
+                <li key={s.n} className="flex gap-4">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-sm font-semibold text-blue-400">
+                    {s.n}
+                  </span>
+                  <div>
+                    <h3 className="text-base font-semibold text-white">
+                      {s.title}
+                    </h3>
+                    <p className="mt-1.5 text-sm leading-relaxed text-slate-400">
+                      {s.body}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        {/* Security */}
+        <section
+          id="security"
+          className="scroll-mt-20 border-t border-slate-800 py-20"
+        >
+          <div className="mx-auto max-w-5xl px-6">
+            <div className="flex flex-col items-start justify-between gap-8 rounded-xl border border-slate-800 bg-slate-900/60 p-8 sm:p-10 lg:flex-row lg:items-center">
+              <div className="max-w-xl space-y-4">
+                <p className="inline-flex items-center gap-2 text-sm font-medium text-emerald-400">
                   <ShieldCheck className="h-4 w-4" />
-                  <span>Row-Level Security Enforced</span>
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-bold text-white">
+                  Your data stays yours
+                </p>
+                <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
                   Your financial ledger belongs strictly to you.
                 </h2>
-                <p className="text-sm text-slate-400 leading-relaxed">
-                  Every transaction, budget, and category is isolated at the
-                  database layer using PostgreSQL Row-Level Security policies
-                  and encrypted session authentication.
+                <p className="text-sm leading-relaxed text-slate-400">
+                  Every transaction, budget and category is isolated per user at
+                  the database level with PostgreSQL Row-Level Security, behind
+                  authenticated sessions. AI insights only run when you ask.
                 </p>
-                <div className="flex flex-wrap gap-4 pt-2 text-xs text-slate-300">
-                  <span className="flex items-center gap-1.5">
-                    <CheckCircle2 className="h-4 w-4 text-blue-400" />
-                    Strict User Data Isolation
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <CheckCircle2 className="h-4 w-4 text-blue-400" />
-                    Philippine Peso (₱) Native
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <CheckCircle2 className="h-4 w-4 text-blue-400" />
-                    Instant Cloud Sync
-                  </span>
-                </div>
+                <ul className="flex flex-wrap gap-x-6 gap-y-2 pt-1 text-sm text-slate-300">
+                  {[
+                    "Per-user data isolation",
+                    "Philippine peso (₱) native",
+                    "Delete your data anytime",
+                  ].map((t) => (
+                    <li key={t} className="flex items-center gap-1.5">
+                      <CheckCircle2 className="h-4 w-4 text-blue-400" />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
               </div>
 
-              <div className="shrink-0">
-                <Link
-                  href="/signup"
-                  className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white transition shadow-lg shadow-blue-600/20"
-                >
-                  <span>Start Tracking Now</span>
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
+              <Link
+                href="/signup"
+                className={`inline-flex shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-500 transition-colors ${focusRing}`}
+              >
+                Start tracking now
+                <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
           </div>
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 py-8">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <div className="flex items-center space-x-3">
-            <img
+      <footer className="border-t border-slate-800 py-8">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 text-sm text-slate-500 sm:flex-row">
+          <div className="flex items-center gap-3">
+            <Image
               src="/finsight-logo.png"
-              alt="Finsight Logo"
-              className="h-6 w-6 object-contain shrink-0 rounded-md"
+              alt=""
+              width={24}
+              height={24}
+              className="h-6 w-6 rounded-md object-contain"
             />
             <span className="font-semibold text-slate-300">Finsight</span>
-            <span>— Personal Finance & Analytics</span>
+            <span>Personal finance and analytics</span>
           </div>
-          <div className="flex items-center space-x-6">
-            © 2026 Finsight. All rights reserved
-          </div>
+          <p>© 2026 Finsight. All rights reserved.</p>
         </div>
       </footer>
     </div>
