@@ -410,7 +410,7 @@ export default function TransactionsSection({
                           type="date"
                           value={editDate}
                           onChange={(e) => setEditDate(e.target.value)}
-                          className={`${inputClass} [&::-webkit-calendar-picker-indicator]:invert`}
+                          className={`${inputClass} [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100`}
                         />
                       </div>
                     </div>

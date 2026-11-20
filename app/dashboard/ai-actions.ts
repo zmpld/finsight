@@ -120,6 +120,32 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+// Logs the real cause on the server (terminal or Vercel Logs) and returns a safe message
+function describeGeminiError(error: unknown): string {
+  const e = error as { status?: number; code?: number; message?: string };
+  const status = e?.status ?? e?.code;
+  const message = String(e?.message ?? error);
+  console.error("AI Generation Error:", {
+    model: MODEL,
+    status,
+    message: message.slice(0, 500),
+  });
+
+  if (message.includes("timed out")) {
+    return "The AI took too long to respond. Please try again.";
+  }
+  if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(message)) {
+    return "The AI service is at its usage limit right now. Please try again in a few minutes.";
+  }
+  if (status === 401 || status === 403 || /API key/i.test(message)) {
+    return "AI insights are unavailable due to a configuration issue (API key).";
+  }
+  if (status === 404 || (status === 400 && /model/i.test(message))) {
+    return "AI insights are unavailable due to a configuration issue (model).";
+  }
+  return "Failed to generate AI insights. Please try again later.";
+}
+
 export async function generateFinancialInsights(): Promise<InsightResult> {
   try {
     const supabase = await createClient();
@@ -214,7 +240,7 @@ ${summary}
           config: {
             systemInstruction,
             temperature: 0.4,
-            maxOutputTokens: 600,
+            maxOutputTokens: 800,
           },
         }),
         GENERATION_TIMEOUT_MS,
@@ -226,10 +252,7 @@ ${summary}
         insight: text || "No insights could be generated at this time.",
       };
     } catch (error) {
-      console.error("AI Generation Error:", error);
-      throw new UserFacingError(
-        "Failed to generate AI insights. Please try again later.",
-      );
+      throw new UserFacingError(describeGeminiError(error));
     }
   } catch (err) {
     if (err instanceof UserFacingError) {

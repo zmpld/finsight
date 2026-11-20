@@ -260,7 +260,7 @@ export default function AddTransactionSection({
               name="transaction_date"
               defaultValue={today}
               required
-              className={`${inputClass} [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:cursor-pointer`}
+              className={`${inputClass} [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100`}
             />
           </div>
 
