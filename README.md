@@ -7,7 +7,7 @@
 
 Finsight is a personal finance web app that turns raw income and expense records into clear answers: where your money goes, how this month compares with the last, and whether you are staying inside your budgets. It pairs a clean, flat dark interface with interactive charts, on-demand AI insights, and a security-first backend built on Supabase.
 
-**Live demo:** _add your URL here_
+**Live demo:** https://finsight-zweb.vercel.app
 
 <!--
 Add screenshots to docs/screenshots/ and uncomment:
